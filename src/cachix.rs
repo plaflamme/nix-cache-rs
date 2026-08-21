@@ -16,8 +16,31 @@ use serde::Deserialize;
 use serde::Serialize;
 use uuid::Uuid;
 
-async fn missing_narinfo(Json(_hashes): Json<Vec<String>>) -> (StatusCode, Json<Vec<String>>) {
-    (StatusCode::OK, Json(Vec::new()))
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GetCacheResponse {
+    github_username: String,
+    is_public: bool,
+    name: String,
+    permission: String,
+    preferred_compression_method: String,
+    public_signing_keys: Vec<String>,
+    uri: String,
+}
+async fn get_cache(Path(name): Path<String>) -> Json<GetCacheResponse> {
+    Json(GetCacheResponse {
+        github_username: "plaflamme".to_string(),
+        is_public: true,
+        name,
+        permission: "Write".to_string(),
+        preferred_compression_method: "ZSTD".to_string(),
+        public_signing_keys: Vec::new(),
+        uri: "https://nix-cache-rs.philippe-e68.workers.dev/".to_string(),
+    })
+}
+
+async fn missing_narinfo(Json(hashes): Json<Vec<String>>) -> (StatusCode, Json<Vec<String>>) {
+    (StatusCode::OK, Json(hashes))
 }
 
 #[derive(Serialize)]
@@ -113,16 +136,54 @@ async fn retrieve_presigned_url(
     Json(RetrievePreSignedUrlResponse { upload_url })
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NarInfoCreate {
+    c_deriver: String,
+    c_file_hash: String,
+    c_file_size: u64,
+    c_nar_hash: String,
+    c_nar_size: u64,
+    c_references: Vec<String>,
+    c_sig: Option<String>,
+    c_store_hash: String,
+    c_store_suffix: String,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CompletedPart {
+    e_tag: String,
+    part_number: u64,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CompleteMultipartUploadRequest {
+    nar_info_create: NarInfoCreate,
+    parts: Vec<CompletedPart>,
+}
+
+async fn complete_multipart_upload(
+    State(_app): State<NixCacheApp>,
+    Path((_name, _nar_id)): Path<(String, Uuid)>,
+    Json(_request): Json<CompleteMultipartUploadRequest>,
+) {
+}
+
 pub fn router(state: NixCacheApp) -> axum::Router {
     // cachix API
     // https://app.cachix.org/api/v1/
     Router::new()
+        .route("/cache/{name}", get(get_cache))
         .route("/cache/{name}/nix-cache-info", get(cache_info))
         .route("/cache/{name}/narinfo", post(missing_narinfo))
         .route("/cache/{name}/multipart-nar", post(create_multipart_upload))
         .route(
             "/cache/{name}/multipart-nar/{nar_id}",
             post(retrieve_presigned_url),
+        )
+        .route(
+            "/cache/{name}/multipart-nar/{nar_id}/complete",
+            post(complete_multipart_upload),
         )
         .with_state(state)
 }

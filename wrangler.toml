@@ -8,6 +8,10 @@ command = "worker-build --release"
 [secrets]
 required = ["R2_ENDPOINT", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"]
 
+[observability.logs]
+enabled = true
+invocation_logs = true
+
 [[r2_buckets]]
 bucket_name = "nix-cache-test"
 binding = "nix_cache_test"

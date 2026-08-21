@@ -19,6 +19,7 @@
               nativeBuildInputs = [
                 pkgs.wrangler
                 pkgs.worker-build
+                pkgs.cachix
               ];
             };
           };
