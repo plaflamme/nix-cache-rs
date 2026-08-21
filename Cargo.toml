@@ -2,5 +2,41 @@
 name = "nix-cache-rs"
 version = "0.1.0"
 edition = "2024"
+description = "A plain Nix binary cache for Cloudflare Workers, backed by R2"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+aws-sigv4 = "1.5"
+aws-credential-types = "1"
+axum = { version = "0.8", default-features = false, features = [
+    "json",
+    "query",
+] }
+axum-macros = { version = "0.5" }
+getrandom = { version = "0.4", features = ["wasm_js"] }
+harmonia-store-nar-info = { git = "https://github.com/plaflamme/harmonia", branch = "move-io-from-utils-hash" }
+harmonia-store-path = { git = "https://github.com/plaflamme/harmonia", branch = "move-io-from-utils-hash" }
+harmonia-store-path-info = { git = "https://github.com/plaflamme/harmonia", branch = "move-io-from-utils-hash" }
+harmonia-utils-signature = { git = "https://github.com/plaflamme/harmonia", branch = "move-io-from-utils-hash" }
+http = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tower-service = "0.3"
+wasm-bindgen = "0.2"
+worker = { version = "0.8.5", features = ["http"] }
+uuid = { version = "1", default-features = false, features = [
+    "v4",
+    "js",
+    "serde",
+] }
+
+[profile.release]
+# Keep the .wasm small — CF Workers has a 10 MiB uncompressed module limit.
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"

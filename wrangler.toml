@@ -1,0 +1,13 @@
+name = "nix-cache-rs"
+main = "build/worker/shim.mjs"
+compatibility_date = "2026-05-28"
+
+[build]
+command = "worker-build --release"
+
+[secrets]
+required = ["R2_ENDPOINT", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"]
+
+[[r2_buckets]]
+bucket_name = "nix-cache-test"
+binding = "nix_cache_test"
