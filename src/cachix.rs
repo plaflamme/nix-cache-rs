@@ -1,4 +1,4 @@
-use std::time::SystemTime;
+use std::time::Duration;
 
 use crate::NixCacheApp;
 use crate::cache_info;
@@ -15,6 +15,7 @@ use http::StatusCode;
 use serde::Deserialize;
 use serde::Serialize;
 use uuid::Uuid;
+use worker::UploadedPart;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -65,7 +66,7 @@ async fn create_multipart_upload(
     let bucket = app.bucket(&name);
     let nar_id = Uuid::new_v4();
     let multipart_upload = bucket
-        .create_multipart_upload(nar_id.to_string())
+        .create_multipart_upload(format!("/nar/{nar_id}"))
         .execute()
         .await
         .unwrap(); // TODO
@@ -92,39 +93,40 @@ struct RetrievePreSignedUrlResponse {
 
 async fn retrieve_presigned_url(
     State(app): State<NixCacheApp>,
-    Path((_name, _nar_id)): Path<(String, Uuid)>,
+    Path((_name, nar_id)): Path<(String, Uuid)>,
     Query(_params): Query<RetrievePreSignedUrlParameters>,
     Json(request): Json<RetrievePreSignedUrlRequest>,
-) -> Json<RetrievePreSignedUrlResponse> {
-    let identity = app.r2_credentials().unwrap().into(); // TODO;
+) -> Result<Json<RetrievePreSignedUrlResponse>, crate::Error> {
+    let identity = app.r2_credentials()?.into();
     let mut settings = SigningSettings::default();
     settings.signature_location = SignatureLocation::QueryParams;
+    settings.expires_in = Some(Duration::from_hours(1));
 
     let params = aws_sigv4::http_request::SigningParams::V4(
         aws_sigv4::sign::v4::SigningParams::builder()
             .identity(&identity)
-            .region("")
-            .name("nix-cache-rs")
-            .time(SystemTime::now())
+            .region("auto")
+            .name("s3")
+            .time(crate::time::now())
             .settings(settings)
-            .build()
-            .unwrap(), // TODO
+            .build()?,
     );
+
+    let upload_url = format!("{}/nar/{nar_id}", app.r2_endpoint());
 
     // https://github.com/cachix/cachix/blob/5ecbf73e1e742f527c0d970bef0a4c0d359a5ea7/cachix/src/Cachix/Client/Push/S3.hs#L108-L116
     let request = SignableRequest::new(
         "PUT",
-        app.r2_endpoint(),
+        &upload_url,
         [
             ("Content-Type", "application/octet-stream"),
             ("Content-MD5", request.content_md5.as_str()),
         ]
         .into_iter(),
         SignableBody::UnsignedPayload,
-    )
-    .unwrap(); // TODO
+    )?;
 
-    let result = aws_sigv4::http_request::sign(request, &params).unwrap();
+    let result = aws_sigv4::http_request::sign(request, &params)?;
     let signed_params = result.output().params();
     let query_params = signed_params
         .iter()
@@ -132,11 +134,11 @@ async fn retrieve_presigned_url(
         .collect::<Vec<String>>()
         .join("&");
 
-    let upload_url = format!("{}?{query_params}", app.r2_endpoint());
-    Json(RetrievePreSignedUrlResponse { upload_url })
+    let upload_url = format!("{upload_url}?{query_params}");
+    Ok(Json(RetrievePreSignedUrlResponse { upload_url }))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 struct NarInfoCreate {
     c_deriver: String,
@@ -149,24 +151,64 @@ struct NarInfoCreate {
     c_store_hash: String,
     c_store_suffix: String,
 }
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 struct CompletedPart {
     e_tag: String,
-    part_number: u64,
+    part_number: u16,
 }
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 struct CompleteMultipartUploadRequest {
     nar_info_create: NarInfoCreate,
     parts: Vec<CompletedPart>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CompleteMultipartUploadParameterss {
+    upload_id: String,
+}
+
+#[worker::send]
+#[axum_macros::debug_handler]
 async fn complete_multipart_upload(
-    State(_app): State<NixCacheApp>,
-    Path((_name, _nar_id)): Path<(String, Uuid)>,
-    Json(_request): Json<CompleteMultipartUploadRequest>,
-) {
+    State(app): State<NixCacheApp>,
+    Path((_name, nar_id)): Path<(String, Uuid)>,
+    Query(params): Query<CompleteMultipartUploadParameterss>,
+    Json(request): Json<CompleteMultipartUploadRequest>,
+) -> StatusCode {
+    worker::console_log!("{nar_id}: {request:?}");
+    let upload = app
+        .bucket("cache_name")
+        .resume_multipart_upload(format!("/nar/{nar_id}"), params.upload_id);
+
+    let upload = match upload {
+        Ok(u) => u,
+        Err(e) => {
+            worker::console_error!("no such multipart upload: {e}");
+            return StatusCode::INTERNAL_SERVER_ERROR;
+        }
+    };
+
+    let result = upload
+        .complete(request.parts.into_iter().map(|part| {
+            let e_tag = part.e_tag.trim_prefix("\"").trim_suffix("\"").to_string();
+            worker::console_log!("e_tag: {e_tag}");
+            UploadedPart::new(part.part_number, e_tag)
+        }))
+        .await;
+
+    match result {
+        Ok(_) => {
+            worker::console_log!("success");
+            StatusCode::OK
+        }
+        Err(e) => {
+            worker::console_error!("cannot complete: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
+    }
 }
 
 pub fn router(state: NixCacheApp) -> axum::Router {

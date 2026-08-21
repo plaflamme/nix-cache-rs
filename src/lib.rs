@@ -1,6 +1,12 @@
 //! # nix-cache-rs
+#![feature(trim_prefix_suffix)]
 
 mod cachix;
+mod error;
+mod time;
+
+pub use error::Error;
+
 use tower_service::Service;
 
 use worker::{Context, Env, HttpRequest};
@@ -23,6 +29,7 @@ impl NixCacheApp {
         Ok(aws_credential_types::Credentials::builder()
             .access_key_id(self.env.var("R2_ACCESS_KEY_ID")?.to_string())
             .secret_access_key(self.env.var("R2_SECRET_ACCESS_KEY")?.to_string())
+            .provider_name("provider_name")
             .build())
     }
 
