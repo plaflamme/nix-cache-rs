@@ -56,6 +56,7 @@ struct CreateMultipartUploadResponse {
 }
 
 #[derive(Deserialize)]
+#[allow(unused)]
 struct CompressionParam {
     compression: Option<String>,
 }
@@ -149,6 +150,7 @@ async fn retrieve_presigned_url(
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
+#[allow(unused)]
 struct NarInfoCreate {
     c_deriver: String,
     c_file_hash: String,
@@ -168,6 +170,7 @@ struct CompletedPart {
 }
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
+#[allow(unused)]
 struct CompleteMultipartUploadRequest {
     nar_info_create: NarInfoCreate,
     parts: Vec<CompletedPart>,
@@ -187,7 +190,6 @@ async fn complete_multipart_upload(
     Query(params): Query<CompleteMultipartUploadParameterss>,
     Json(request): Json<CompleteMultipartUploadRequest>,
 ) -> StatusCode {
-    worker::console_log!("{nar_id}: {request:?}");
     let upload = app
         .bucket(&name)
         .resume_multipart_upload(bucket_key(&nar_id), params.upload_id);
@@ -210,13 +212,10 @@ async fn complete_multipart_upload(
         .await;
 
     match result {
-        Ok(_) => {
-            worker::console_log!("success");
-            StatusCode::OK
-        }
+        Ok(_) => StatusCode::OK,
         Err(e) => {
             worker::console_error!("cannot complete: {e}");
-            StatusCode::INTERNAL_SERVER_ERROR
+            StatusCode::INTERNAL_SERVER_ERROR // TODO: some errors are client errors
         }
     }
 }
