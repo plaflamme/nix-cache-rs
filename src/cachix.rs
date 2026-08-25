@@ -17,6 +17,10 @@ use serde::Serialize;
 use uuid::Uuid;
 use worker::UploadedPart;
 
+fn bucket_key(nar_id: &uuid::Uuid) -> String {
+    format!("nar/{nar_id}")
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct GetCacheResponse {
@@ -66,7 +70,7 @@ async fn create_multipart_upload(
     let bucket = app.bucket(&name);
     let nar_id = Uuid::new_v4();
     let multipart_upload = bucket
-        .create_multipart_upload(format!("/nar/{nar_id}"))
+        .create_multipart_upload(bucket_key(&nar_id))
         .execute()
         .await
         .unwrap(); // TODO
@@ -94,7 +98,7 @@ struct RetrievePreSignedUrlResponse {
 async fn retrieve_presigned_url(
     State(app): State<NixCacheApp>,
     Path((_name, nar_id)): Path<(String, Uuid)>,
-    Query(_params): Query<RetrievePreSignedUrlParameters>,
+    Query(params): Query<RetrievePreSignedUrlParameters>,
     Json(request): Json<RetrievePreSignedUrlRequest>,
 ) -> Result<Json<RetrievePreSignedUrlResponse>, crate::Error> {
     let identity = app.r2_credentials()?.into();
@@ -102,7 +106,7 @@ async fn retrieve_presigned_url(
     settings.signature_location = SignatureLocation::QueryParams;
     settings.expires_in = Some(Duration::from_hours(1));
 
-    let params = aws_sigv4::http_request::SigningParams::V4(
+    let signing_params = aws_sigv4::http_request::SigningParams::V4(
         aws_sigv4::sign::v4::SigningParams::builder()
             .identity(&identity)
             .region("auto")
@@ -112,7 +116,12 @@ async fn retrieve_presigned_url(
             .build()?,
     );
 
-    let upload_url = format!("{}/nar/{nar_id}", app.r2_endpoint());
+    let upload_url = format!(
+        "{}/nar/{nar_id}?uploadId={}&partNumber={}",
+        app.r2_endpoint(),
+        params.upload_id,
+        params.part_number
+    );
 
     // https://github.com/cachix/cachix/blob/5ecbf73e1e742f527c0d970bef0a4c0d359a5ea7/cachix/src/Cachix/Client/Push/S3.hs#L108-L116
     let request = SignableRequest::new(
@@ -126,7 +135,7 @@ async fn retrieve_presigned_url(
         SignableBody::UnsignedPayload,
     )?;
 
-    let result = aws_sigv4::http_request::sign(request, &params)?;
+    let result = aws_sigv4::http_request::sign(request, &signing_params)?;
     let signed_params = result.output().params();
     let query_params = signed_params
         .iter()
@@ -134,7 +143,7 @@ async fn retrieve_presigned_url(
         .collect::<Vec<String>>()
         .join("&");
 
-    let upload_url = format!("{upload_url}?{query_params}");
+    let upload_url = format!("{upload_url}&{query_params}");
     Ok(Json(RetrievePreSignedUrlResponse { upload_url }))
 }
 
@@ -174,28 +183,29 @@ struct CompleteMultipartUploadParameterss {
 #[axum_macros::debug_handler]
 async fn complete_multipart_upload(
     State(app): State<NixCacheApp>,
-    Path((_name, nar_id)): Path<(String, Uuid)>,
+    Path((name, nar_id)): Path<(String, Uuid)>,
     Query(params): Query<CompleteMultipartUploadParameterss>,
     Json(request): Json<CompleteMultipartUploadRequest>,
 ) -> StatusCode {
     worker::console_log!("{nar_id}: {request:?}");
     let upload = app
-        .bucket("cache_name")
-        .resume_multipart_upload(format!("/nar/{nar_id}"), params.upload_id);
+        .bucket(&name)
+        .resume_multipart_upload(bucket_key(&nar_id), params.upload_id);
 
     let upload = match upload {
         Ok(u) => u,
         Err(e) => {
-            worker::console_error!("no such multipart upload: {e}");
-            return StatusCode::INTERNAL_SERVER_ERROR;
+            worker::console_warn!("no such multipart upload: {e}");
+            return StatusCode::BAD_REQUEST;
         }
     };
 
     let result = upload
         .complete(request.parts.into_iter().map(|part| {
-            let e_tag = part.e_tag.trim_prefix("\"").trim_suffix("\"").to_string();
-            worker::console_log!("e_tag: {e_tag}");
-            UploadedPart::new(part.part_number, e_tag)
+            UploadedPart::new(
+                part.part_number,
+                part.e_tag.trim_prefix('"').trim_suffix('"').to_string(),
+            )
         }))
         .await;
 
