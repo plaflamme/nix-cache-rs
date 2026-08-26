@@ -79,12 +79,19 @@ pub(crate) fn render_narinfo(
         }
     }
 
+    let deriver = StorePath::from_store_dir_str(&StoreDir::default(), &create.c_deriver)
+        .or_else(|_| StorePath::from_str(&create.c_deriver))
+        .map_err(|e| NarInfoError::Invalid {
+            field: "deriver",
+            value: create.c_deriver.clone(),
+            message: e.to_string(),
+        })?;
+
     let narinfo = NarInfo {
         path: store_path,
         info: UnkeyedNarInfo {
             info: UnkeyedValidPathInfo {
-                deriver: StorePath::from_store_dir_str(&StoreDir::default(), &create.c_deriver)
-                    .ok(),
+                deriver: Some(deriver),
                 nar_hash,
                 references,
                 registration_time: None,
@@ -94,7 +101,7 @@ pub(crate) fn render_narinfo(
                 ca: None,
                 store_dir: StoreDir::default(),
             },
-            url: Some(format!("{origin}/nar/{nar_id}.nar")),
+            url: Some(format!("{origin}/nar/{nar_id}.nar.zst")),
             compression: Some("zstd".to_string()),
             download_hash: Some(file_hash.into()),
             download_size: Some(create.c_file_size),
@@ -155,7 +162,7 @@ mod tests {
         let text = render_narinfo(&create, &nar_id, "https://cache.example.com").unwrap();
         let expected = format!(
             "StorePath: /nix/store/4myf3s1i9rahd2my1zs2cqify7y930sk-readline-8.3p3\n\
-             URL: https://cache.example.com/nar/{nar_id}.nar\n\
+             URL: https://cache.example.com/nar/{nar_id}.nar.zst\n\
              Compression: zstd\n\
              FileHash: sha256:1gryjhjb0kwdbv8xrap77ac7nbx2w39zl24g6pq3s5kh8rjayqp3\n\
              FileSize: 212516\n\
@@ -173,7 +180,7 @@ mod tests {
         let create = sample_create();
         let nar_id = Uuid::new_v4();
         let text = render_narinfo(&create, &nar_id, "https://cache.other-host.org").unwrap();
-        let url = format!("URL: https://cache.other-host.org/nar/{nar_id}.nar\n");
+        let url = format!("URL: https://cache.other-host.org/nar/{nar_id}.nar.zst\n");
         assert!(text.contains(&url), "missing {url:?} in:\n{text}");
     }
 

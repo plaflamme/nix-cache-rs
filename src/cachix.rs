@@ -9,17 +9,17 @@ use aws_sigv4::http_request::SigningSettings;
 use axum::extract::Path;
 use axum::extract::Query;
 use axum::extract::State;
-use axum::http::Uri;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use http::StatusCode;
 use serde::Deserialize;
 use serde::Serialize;
 use uuid::Uuid;
+use worker::HttpMetadata;
 use worker::UploadedPart;
 
 fn bucket_key(cache_name: &str, nar_id: &uuid::Uuid) -> String {
-    format!("{cache_name}/nar/{nar_id}")
+    format!("{cache_name}/nar/{nar_id}.zst")
 }
 
 #[derive(Serialize)]
@@ -233,6 +233,10 @@ async fn complete_multipart_upload(
     let nar_info_txt =
         crate::narinfo::render_narinfo(&request.nar_info_create, &nar_id, &app.cache_endpoint()?)?;
 
+    let metadata = HttpMetadata {
+        content_type: Some("text/x-nix-narinfo".to_string()),
+        ..Default::default()
+    };
     bucket
         .put(
             format!(
@@ -241,6 +245,7 @@ async fn complete_multipart_upload(
             ),
             nar_info_txt,
         )
+        .http_metadata(metadata)
         .execute()
         .await?;
 

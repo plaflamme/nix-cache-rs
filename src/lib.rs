@@ -4,9 +4,8 @@
 mod cachix;
 mod error;
 mod narinfo;
+mod store;
 mod time;
-
-use std::str::FromStr;
 
 pub use error::Error;
 
@@ -62,10 +61,10 @@ fn router(env: Env) -> axum::Router {
     let state = NixCacheApp::new(env);
     axum::Router::new()
         // binary cache
-        .route("/", axum::routing::get(cache_info))
+        // .route("/", axum::routing::get(cache_info))
         .route("/nix-cache-info", axum::routing::get(cache_info))
-        .with_state(state.clone())
-        .nest("/api/v1", cachix::router(state))
+        .merge(store::router(state.clone()))
+        .nest("/api/v1", cachix::router(state.clone()))
 }
 
 #[worker::event(fetch)]

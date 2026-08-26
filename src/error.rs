@@ -12,6 +12,8 @@ pub enum Error {
     BuildError(#[from] BuildError),
     #[error("Failed to sign: {0}")]
     SiningError(#[from] SigningError),
+    #[error("Http error: {0}")]
+    HttpError(#[from] http::Error),
     #[error("Invalid narinfo: {0}")]
     NarInfoError(#[from] NarInfoError),
     /// A client-supplied value failed validation. Rendered as HTTP 400.
