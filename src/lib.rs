@@ -21,8 +21,16 @@ impl NixCacheApp {
         Self { env }
     }
 
-    fn bucket(&self, _cache_name: &str) -> worker::Bucket {
-        self.env.bucket("nix_cache_test").unwrap() // TODO
+    fn bucket(&self) -> worker::Result<worker::Bucket> {
+        self.env.bucket("nix-cache-bucket")
+    }
+
+    fn bucket_name(&self) -> worker::Result<String> {
+        Ok(self.env.var("bucket_name")?.to_string())
+    }
+
+    fn github_username(&self) -> worker::Result<String> {
+        Ok(self.env.var("github_username")?.to_string())
     }
 
     fn r2_credentials(&self) -> worker::Result<aws_credential_types::Credentials> {
@@ -33,9 +41,8 @@ impl NixCacheApp {
             .build())
     }
 
-    fn r2_endpoint(&self) -> String {
-        let var = self.env.var("R2_ENDPOINT").unwrap(); // TODO
-        var.to_string()
+    fn r2_endpoint(&self) -> worker::Result<String> {
+        Ok(self.env.secret("R2_ENDPOINT")?.to_string())
     }
 }
 

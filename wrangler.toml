@@ -5,6 +5,10 @@ compatibility_date = "2026-05-28"
 [build]
 command = "worker-build --release"
 
+[vars]
+bucket_name = "nix-cache-test"
+github_username = "plaflamme"
+
 [secrets]
 required = ["R2_ENDPOINT", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"]
 
@@ -23,7 +27,6 @@ enabled = true
 persist = true
 head_sampling_rate = 1
 
-
 [[r2_buckets]]
 bucket_name = "nix-cache-test"
-binding = "nix_cache_test"
+binding = "nix-cache-bucket"

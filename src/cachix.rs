@@ -9,6 +9,7 @@ use aws_sigv4::http_request::SigningSettings;
 use axum::extract::Path;
 use axum::extract::Query;
 use axum::extract::State;
+use axum::http::Uri;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use http::StatusCode;
@@ -17,8 +18,8 @@ use serde::Serialize;
 use uuid::Uuid;
 use worker::UploadedPart;
 
-fn bucket_key(nar_id: &uuid::Uuid) -> String {
-    format!("nar/{nar_id}")
+fn bucket_key(cache_name: &str, nar_id: &uuid::Uuid) -> String {
+    format!("{cache_name}/nar/{nar_id}")
 }
 
 #[derive(Serialize)]
@@ -32,15 +33,25 @@ struct GetCacheResponse {
     public_signing_keys: Vec<String>,
     uri: String,
 }
-async fn get_cache(Path(name): Path<String>) -> Json<GetCacheResponse> {
+
+async fn get_cache(
+    uri: Uri,
+    Path(name): Path<String>,
+    State(app): State<NixCacheApp>,
+) -> Json<GetCacheResponse> {
+    let mut worker_uri_parts = uri.into_parts();
+    worker_uri_parts.path_and_query = None;
+    let uri = http::Uri::from_parts(worker_uri_parts)
+        .map(|u| u.to_string())
+        .unwrap_or("".to_string());
     Json(GetCacheResponse {
-        github_username: "plaflamme".to_string(),
+        github_username: app.github_username().unwrap_or("".to_string()),
         is_public: true,
         name,
         permission: "Write".to_string(),
         preferred_compression_method: "ZSTD".to_string(),
         public_signing_keys: Vec::new(),
-        uri: "https://nix-cache-rs.philippe-e68.workers.dev/".to_string(),
+        uri,
     })
 }
 
@@ -67,14 +78,13 @@ async fn create_multipart_upload(
     Path(name): Path<String>,
     State(app): State<NixCacheApp>,
     Query(_param): Query<CompressionParam>,
-) -> axum::response::Result<Json<CreateMultipartUploadResponse>> {
-    let bucket = app.bucket(&name);
+) -> Result<Json<CreateMultipartUploadResponse>, crate::Error> {
+    let bucket = app.bucket()?;
     let nar_id = Uuid::new_v4();
     let multipart_upload = bucket
-        .create_multipart_upload(bucket_key(&nar_id))
+        .create_multipart_upload(bucket_key(&name, &nar_id))
         .execute()
-        .await
-        .unwrap(); // TODO
+        .await?;
     let upload_id = multipart_upload.upload_id().await;
     Ok(Json(CreateMultipartUploadResponse { nar_id, upload_id }))
 }
@@ -98,7 +108,7 @@ struct RetrievePreSignedUrlResponse {
 
 async fn retrieve_presigned_url(
     State(app): State<NixCacheApp>,
-    Path((_name, nar_id)): Path<(String, Uuid)>,
+    Path((name, nar_id)): Path<(String, Uuid)>,
     Query(params): Query<RetrievePreSignedUrlParameters>,
     Json(request): Json<RetrievePreSignedUrlRequest>,
 ) -> Result<Json<RetrievePreSignedUrlResponse>, crate::Error> {
@@ -118,8 +128,10 @@ async fn retrieve_presigned_url(
     );
 
     let upload_url = format!(
-        "{}/nar/{nar_id}?uploadId={}&partNumber={}",
-        app.r2_endpoint(),
+        "{}/{}/{}?uploadId={}&partNumber={}",
+        app.r2_endpoint()?,
+        app.bucket_name()?,
+        bucket_key(&name, &nar_id),
         params.upload_id,
         params.part_number
     );
@@ -189,16 +201,16 @@ async fn complete_multipart_upload(
     Path((name, nar_id)): Path<(String, Uuid)>,
     Query(params): Query<CompleteMultipartUploadParameterss>,
     Json(request): Json<CompleteMultipartUploadRequest>,
-) -> StatusCode {
+) -> Result<StatusCode, crate::Error> {
     let upload = app
-        .bucket(&name)
-        .resume_multipart_upload(bucket_key(&nar_id), params.upload_id);
+        .bucket()?
+        .resume_multipart_upload(bucket_key(&name, &nar_id), params.upload_id);
 
     let upload = match upload {
         Ok(u) => u,
         Err(e) => {
             worker::console_warn!("no such multipart upload: {e}");
-            return StatusCode::BAD_REQUEST;
+            return Ok(StatusCode::BAD_REQUEST);
         }
     };
 
@@ -212,10 +224,10 @@ async fn complete_multipart_upload(
         .await;
 
     match result {
-        Ok(_) => StatusCode::OK,
+        Ok(_) => Ok(StatusCode::OK),
         Err(e) => {
             worker::console_error!("cannot complete: {e}");
-            StatusCode::INTERNAL_SERVER_ERROR // TODO: some errors are client errors
+            Ok(StatusCode::INTERNAL_SERVER_ERROR) // TODO: some errors are client errors
         }
     }
 }
