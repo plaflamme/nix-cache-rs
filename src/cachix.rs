@@ -210,9 +210,8 @@ async fn complete_multipart_upload(
     Query(params): Query<CompleteMultipartUploadParameterss>,
     Json(request): Json<CompleteMultipartUploadRequest>,
 ) -> Result<StatusCode, crate::Error> {
-    let upload = app
-        .bucket()?
-        .resume_multipart_upload(bucket_key(&name, &nar_id), params.upload_id);
+    let bucket = app.bucket()?;
+    let upload = bucket.resume_multipart_upload(bucket_key(&name, &nar_id), params.upload_id);
 
     let upload = match upload {
         Ok(u) => u,
@@ -230,6 +229,20 @@ async fn complete_multipart_upload(
             )
         }))
         .await;
+
+    let nar_info_txt =
+        crate::narinfo::render_narinfo(&request.nar_info_create, &nar_id, &app.cache_endpoint()?)?;
+
+    bucket
+        .put(
+            format!(
+                "{}/nix/store/{}.narinfo",
+                name, request.nar_info_create.c_store_hash
+            ),
+            nar_info_txt,
+        )
+        .execute()
+        .await?;
 
     match result {
         Ok(_) => Ok(StatusCode::OK),
