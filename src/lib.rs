@@ -3,7 +3,10 @@
 
 mod cachix;
 mod error;
+mod narinfo;
 mod time;
+
+use std::str::FromStr;
 
 pub use error::Error;
 
@@ -19,6 +22,10 @@ struct NixCacheApp {
 impl NixCacheApp {
     fn new(env: Env) -> Self {
         Self { env }
+    }
+
+    fn cache_endpoint(&self) -> worker::Result<String> {
+        Ok(self.env.var("cache_endpoint")?.to_string())
     }
 
     fn bucket(&self) -> worker::Result<worker::Bucket> {

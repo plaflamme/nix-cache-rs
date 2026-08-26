@@ -35,15 +35,9 @@ struct GetCacheResponse {
 }
 
 async fn get_cache(
-    uri: Uri,
     Path(name): Path<String>,
     State(app): State<NixCacheApp>,
 ) -> Json<GetCacheResponse> {
-    let mut worker_uri_parts = uri.into_parts();
-    worker_uri_parts.path_and_query = None;
-    let uri = http::Uri::from_parts(worker_uri_parts)
-        .map(|u| u.to_string())
-        .unwrap_or("".to_string());
     Json(GetCacheResponse {
         github_username: app.github_username().unwrap_or("".to_string()),
         is_public: true,
@@ -51,7 +45,7 @@ async fn get_cache(
         permission: "Write".to_string(),
         preferred_compression_method: "ZSTD".to_string(),
         public_signing_keys: Vec::new(),
-        uri,
+        uri: app.cache_endpoint().unwrap_or("".to_string()),
     })
 }
 
@@ -77,8 +71,9 @@ struct CompressionParam {
 async fn create_multipart_upload(
     Path(name): Path<String>,
     State(app): State<NixCacheApp>,
-    Query(_param): Query<CompressionParam>,
+    Query(param): Query<CompressionParam>,
 ) -> Result<Json<CreateMultipartUploadResponse>, crate::Error> {
+    validate_compression(param.compression.as_deref())?;
     let bucket = app.bucket()?;
     let nar_id = Uuid::new_v4();
     let multipart_upload = bucket
@@ -163,16 +158,29 @@ async fn retrieve_presigned_url(
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 #[allow(unused)]
-struct NarInfoCreate {
-    c_deriver: String,
-    c_file_hash: String,
-    c_file_size: u64,
-    c_nar_hash: String,
-    c_nar_size: u64,
-    c_references: Vec<String>,
-    c_sig: Option<String>,
-    c_store_hash: String,
-    c_store_suffix: String,
+pub(crate) struct NarInfoCreate {
+    pub(crate) c_deriver: String,
+    pub(crate) c_file_hash: String,
+    pub(crate) c_file_size: u64,
+    pub(crate) c_nar_hash: String,
+    pub(crate) c_nar_size: u64,
+    pub(crate) c_references: Vec<String>,
+    pub(crate) c_sig: Option<String>,
+    pub(crate) c_store_hash: String,
+    pub(crate) c_store_suffix: String,
+}
+
+/// Validates the `?compression=` query parameter of
+/// `create_multipart_upload`. An absent value means the client default, which
+/// we also treat as zstd — the only compression this cache accepts.
+fn validate_compression(compression: Option<&str>) -> Result<(), crate::Error> {
+    match compression.unwrap_or("none") {
+        value if value.eq_ignore_ascii_case("zstd") || value.eq_ignore_ascii_case("zst") => Ok(()),
+        other => Err(crate::Error::Validation {
+            field: "compression",
+            message: format!("only \"zstd\" is supported, got: {other}"),
+        }),
+    }
 }
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -249,4 +257,24 @@ pub fn router(state: NixCacheApp) -> axum::Router {
             post(complete_multipart_upload),
         )
         .with_state(state)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compression_accepts_zstd_or_absent() {
+        assert!(validate_compression(Some("zst")).is_ok());
+        assert!(validate_compression(Some("zstd")).is_ok());
+        assert!(validate_compression(Some("ZSTD")).is_ok());
+    }
+
+    #[test]
+    fn compression_rejects_other_methods() {
+        assert!(validate_compression(None).is_err());
+        assert!(validate_compression(Some("xz")).is_err());
+        assert!(validate_compression(Some("none")).is_err());
+        assert!(validate_compression(Some("")).is_err());
+    }
 }

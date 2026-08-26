@@ -6,6 +6,7 @@ compatibility_date = "2026-05-28"
 command = "worker-build --release"
 
 [vars]
+cache_endpoint = "https://nix-cache-rs.philippe-e68.workers.dev" # catch-22: we can only know this after deploying the worker
 bucket_name = "nix-cache-test"
 github_username = "plaflamme"
 

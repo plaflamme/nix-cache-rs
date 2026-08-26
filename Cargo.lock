@@ -909,6 +909,7 @@ dependencies = [
  "harmonia-store-nar-info",
  "harmonia-store-path",
  "harmonia-store-path-info",
+ "harmonia-utils-hash",
  "harmonia-utils-signature",
  "http 1.5.0",
  "serde",

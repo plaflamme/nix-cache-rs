@@ -10,10 +10,20 @@ pub enum Error {
     BuildError(#[from] BuildError),
     #[error("Failed to sign: {0}")]
     SiningError(#[from] SigningError),
+    /// A client-supplied value failed validation. Rendered as HTTP 400.
+    #[error("validation error: {field}: {message}")]
+    Validation {
+        field: &'static str,
+        message: String,
+    },
 }
 
 impl IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
-        (http::StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
+        let status = match &self {
+            Error::Validation { .. } => http::StatusCode::BAD_REQUEST,
+            _ => http::StatusCode::INTERNAL_SERVER_ERROR,
+        };
+        (status, self.to_string()).into_response()
     }
 }
