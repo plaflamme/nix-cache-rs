@@ -1,7 +1,6 @@
 use crate::NixCacheApp;
 use crate::cache_info;
-use aws_sigv4::http_request::SignableBody;
-use aws_sigv4::http_request::SignableRequest;
+
 use axum::extract::Path;
 use axum::extract::Query;
 use axum::extract::State;
@@ -116,18 +115,15 @@ async fn retrieve_presigned_url(
         .finish();
 
     // https://github.com/cachix/cachix/blob/5ecbf73e1e742f527c0d970bef0a4c0d359a5ea7/cachix/src/Cachix/Client/Push/S3.hs#L108-L116
-    let request = SignableRequest::new(
-        "PUT",
-        upload_url.to_string(),
-        [
+    crate::r2_sig::sign_request(
+        &app,
+        &mut upload_url,
+        http::Method::PUT,
+        &[
             ("Content-Type", "application/octet-stream"),
             ("Content-MD5", request.content_md5.as_str()),
-        ]
-        .into_iter(),
-        SignableBody::UnsignedPayload,
+        ],
     )?;
-
-    crate::r2_sig::sign_request(&app, request, &mut upload_url)?;
 
     Ok(Json(RetrievePreSignedUrlResponse {
         upload_url: upload_url.to_string(),

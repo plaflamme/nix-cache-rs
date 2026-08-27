@@ -86,14 +86,7 @@ async fn get_nar(
             .extend(bucket_key("default", &nar_id).split('/')); // TODO: cache name from hostname
 
         // https://github.com/cachix/cachix/blob/5ecbf73e1e742f527c0d970bef0a4c0d359a5ea7/cachix/src/Cachix/Client/Push/S3.hs#L108-L116
-        let request = SignableRequest::new(
-            "GET",
-            download_url.to_string(),
-            std::iter::empty(),
-            SignableBody::UnsignedPayload,
-        )?;
-
-        crate::r2_sig::sign_request(&app, request, &mut download_url)?;
+        crate::r2_sig::sign_request(&app, &mut download_url, http::Method::GET, &[])?;
 
         Ok(axum::response::Redirect::temporary(download_url.as_str()).into_response())
     } else {
