@@ -56,7 +56,7 @@ impl NixCacheApp {
 
 #[axum_macros::debug_handler]
 async fn cache_info() -> &'static str {
-    "StoreDir: /nix/store\nWantMassQuery: 1\nPriority: 40\n"
+    "StoreDir: /nix/store\nPriority: 40\n"
 }
 
 fn router(env: Env) -> axum::Router {
