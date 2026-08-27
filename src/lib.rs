@@ -49,8 +49,10 @@ impl NixCacheApp {
             .build())
     }
 
-    fn r2_endpoint(&self) -> worker::Result<String> {
-        Ok(self.env.secret("R2_ENDPOINT")?.to_string())
+    fn r2_endpoint(&self) -> worker::Result<url::Url> {
+        Ok(url::Url::parse(
+            &self.env.secret("R2_ENDPOINT")?.to_string(),
+        )?)
     }
 }
 

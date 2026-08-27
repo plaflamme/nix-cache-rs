@@ -103,19 +103,22 @@ async fn retrieve_presigned_url(
     Query(params): Query<RetrievePreSignedUrlParameters>,
     Json(request): Json<RetrievePreSignedUrlRequest>,
 ) -> Result<Json<RetrievePreSignedUrlResponse>, crate::Error> {
-    let upload_url = format!(
-        "{}/{}/{}?uploadId={}&partNumber={}",
-        app.r2_endpoint()?,
-        app.bucket_name()?,
-        bucket_key(&name, &nar_id),
-        params.upload_id,
-        params.part_number
-    );
+    let mut upload_url = app.r2_endpoint()?;
+    upload_url
+        .path_segments_mut()
+        .expect("url can be base")
+        .push(&app.bucket_name()?)
+        .extend(bucket_key(&name, &nar_id).split('/'));
+    upload_url
+        .query_pairs_mut()
+        .append_pair("uploadId", &params.upload_id)
+        .append_pair("partNumber", &params.part_number.to_string())
+        .finish();
 
     // https://github.com/cachix/cachix/blob/5ecbf73e1e742f527c0d970bef0a4c0d359a5ea7/cachix/src/Cachix/Client/Push/S3.hs#L108-L116
     let request = SignableRequest::new(
         "PUT",
-        &upload_url,
+        upload_url.to_string(),
         [
             ("Content-Type", "application/octet-stream"),
             ("Content-MD5", request.content_md5.as_str()),
@@ -124,16 +127,11 @@ async fn retrieve_presigned_url(
         SignableBody::UnsignedPayload,
     )?;
 
-    let result = crate::r2_sig::sign_request(&app, request)?;
-    let signed_params = result.output().params();
-    let query_params = signed_params
-        .iter()
-        .map(|(key, value)| format!("{key}={value}"))
-        .collect::<Vec<String>>()
-        .join("&");
+    crate::r2_sig::sign_request(&app, request, &mut upload_url)?;
 
-    let upload_url = format!("{upload_url}&{query_params}");
-    Ok(Json(RetrievePreSignedUrlResponse { upload_url }))
+    Ok(Json(RetrievePreSignedUrlResponse {
+        upload_url: upload_url.to_string(),
+    }))
 }
 
 #[derive(Deserialize, Debug)]

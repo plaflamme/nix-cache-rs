@@ -78,33 +78,24 @@ async fn get_nar(
     if let Some((nar_id, "nar.zst")) = store_path.split_once('.')
         && let Ok(nar_id) = uuid::Uuid::from_str(nar_id)
     {
-        let download_url = format!(
-            "{}/{}/{}?",
-            app.r2_endpoint()?,
-            app.bucket_name()?,
-            bucket_key("default", &nar_id), // TODO: cache name from hostname
-        );
+        let mut download_url = app.r2_endpoint()?;
+        download_url
+            .path_segments_mut()
+            .expect("url can be base")
+            .push(&app.bucket_name()?)
+            .extend(bucket_key("default", &nar_id).split('/')); // TODO: cache name from hostname
 
         // https://github.com/cachix/cachix/blob/5ecbf73e1e742f527c0d970bef0a4c0d359a5ea7/cachix/src/Cachix/Client/Push/S3.hs#L108-L116
         let request = SignableRequest::new(
             "GET",
-            &download_url,
+            download_url.to_string(),
             std::iter::empty(),
             SignableBody::UnsignedPayload,
         )?;
 
-        let result = crate::r2_sig::sign_request(&app, request)?;
+        crate::r2_sig::sign_request(&app, request, &mut download_url)?;
 
-        let signed_params = result.output().params();
-        let query_params = signed_params
-            .iter()
-            .map(|(key, value)| format!("{key}={value}"))
-            .collect::<Vec<String>>()
-            .join("&");
-
-        let download_url = format!("{download_url}&{query_params}");
-
-        Ok(axum::response::Redirect::temporary(&download_url).into_response())
+        Ok(axum::response::Redirect::temporary(download_url.as_str()).into_response())
     } else {
         Ok(axum::response::Response::builder()
             .status(StatusCode::BAD_REQUEST)

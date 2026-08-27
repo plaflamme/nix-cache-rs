@@ -1,18 +1,15 @@
 use std::time::Duration;
 
-use aws_sigv4::{
-    SigningOutput,
-    http_request::{
-        SignableRequest, SignatureLocation, SigningInstructions, SigningParams, SigningSettings,
-    },
-};
+use aws_sigv4::http_request::{SignableRequest, SignatureLocation, SigningParams, SigningSettings};
 
 use crate::NixCacheApp;
 
+/// Uses the provided request to generate signing query parameters and adds the resulting parameters to the provided [`request_url`].
 pub fn sign_request<'a>(
     app: &NixCacheApp,
     request: SignableRequest<'a>,
-) -> Result<SigningOutput<SigningInstructions>, crate::Error> {
+    request_url: &mut url::Url,
+) -> Result<(), crate::Error> {
     let identity = app.r2_credentials()?.into();
     let mut settings = SigningSettings::default();
     settings.signature_location = SignatureLocation::QueryParams;
@@ -28,5 +25,13 @@ pub fn sign_request<'a>(
     );
 
     let result = aws_sigv4::http_request::sign(request, &signing_params)?;
-    Ok(result)
+    result
+        .output()
+        .params()
+        .iter()
+        .fold(&mut request_url.query_pairs_mut(), |qp, (key, value)| {
+            qp.append_pair(key, value)
+        })
+        .finish();
+    Ok(())
 }
