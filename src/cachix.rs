@@ -4,8 +4,6 @@ use crate::NixCacheApp;
 use crate::cache_info;
 use aws_sigv4::http_request::SignableBody;
 use aws_sigv4::http_request::SignableRequest;
-use aws_sigv4::http_request::SignatureLocation;
-use aws_sigv4::http_request::SigningSettings;
 use axum::extract::Path;
 use axum::extract::Query;
 use axum::extract::State;
@@ -18,7 +16,7 @@ use uuid::Uuid;
 use worker::HttpMetadata;
 use worker::UploadedPart;
 
-fn bucket_key(cache_name: &str, nar_id: &uuid::Uuid) -> String {
+pub fn bucket_key(cache_name: &str, nar_id: &uuid::Uuid) -> String {
     format!("{cache_name}/nar/{nar_id}.zst")
 }
 
@@ -107,21 +105,6 @@ async fn retrieve_presigned_url(
     Query(params): Query<RetrievePreSignedUrlParameters>,
     Json(request): Json<RetrievePreSignedUrlRequest>,
 ) -> Result<Json<RetrievePreSignedUrlResponse>, crate::Error> {
-    let identity = app.r2_credentials()?.into();
-    let mut settings = SigningSettings::default();
-    settings.signature_location = SignatureLocation::QueryParams;
-    settings.expires_in = Some(Duration::from_hours(1));
-
-    let signing_params = aws_sigv4::http_request::SigningParams::V4(
-        aws_sigv4::sign::v4::SigningParams::builder()
-            .identity(&identity)
-            .region("auto")
-            .name("s3")
-            .time(crate::time::now())
-            .settings(settings)
-            .build()?,
-    );
-
     let upload_url = format!(
         "{}/{}/{}?uploadId={}&partNumber={}",
         app.r2_endpoint()?,
@@ -143,7 +126,7 @@ async fn retrieve_presigned_url(
         SignableBody::UnsignedPayload,
     )?;
 
-    let result = aws_sigv4::http_request::sign(request, &signing_params)?;
+    let result = crate::r2_sig::sign_request(&app, request)?;
     let signed_params = result.output().params();
     let query_params = signed_params
         .iter()

@@ -3,7 +3,9 @@
 
 mod cachix;
 mod error;
+mod extract;
 mod narinfo;
+mod r2_sig;
 mod store;
 mod time;
 
@@ -60,8 +62,6 @@ async fn cache_info() -> &'static str {
 fn router(env: Env) -> axum::Router {
     let state = NixCacheApp::new(env);
     axum::Router::new()
-        // binary cache
-        // .route("/", axum::routing::get(cache_info))
         .route("/nix-cache-info", axum::routing::get(cache_info))
         .merge(store::router(state.clone()))
         .nest("/api/v1", cachix::router(state.clone()))
