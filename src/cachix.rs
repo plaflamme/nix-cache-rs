@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use crate::NixCacheApp;
 use crate::cache_info;
 use aws_sigv4::http_request::SignableBody;

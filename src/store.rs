@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use aws_sigv4::http_request::{SignableBody, SignableRequest, SignatureLocation, SigningSettings};
+use aws_sigv4::http_request::{SignableBody, SignableRequest};
 use axum::{
     Router,
     extract::{Path, State},
@@ -16,6 +16,7 @@ use crate::{NixCacheApp, cachix::bucket_key, extract::Method};
 async fn get_narinfo(
     State(app): State<NixCacheApp>,
     Path(store_hash): Path<String>,
+    Method(method): Method,
 ) -> Result<axum::response::Response, crate::Error> {
     let bucket = app.bucket()?;
     let cache_name = "default"; // TODO: extract from worker URI
@@ -29,14 +30,28 @@ async fn get_narinfo(
             .status(StatusCode::NOT_FOUND)
             .body(axum::body::Body::empty())?,
         Some(obj) => {
-            let res = axum::response::Response::builder();
-            let res = if let Some(ct) = obj.http_metadata().content_type.as_ref() {
-                res.header("Content-Type", ct.clone())
+            if let Some(body) = obj.body() {
+                let res = axum::response::Response::builder()
+                    .status(StatusCode::OK)
+                    .header("Content-Length", obj.size());
+                let res = if let Some(ct) = obj.http_metadata().content_type.as_ref() {
+                    res.header("Content-Type", ct.clone())
+                } else {
+                    res
+                };
+                match method {
+                    http::Method::GET => {
+                        // TODO: stream the body instead, but this file is small, so it's fine
+                        res.body(axum::body::Body::from(body.text().await?))?
+                    }
+                    http::Method::HEAD => res.body(axum::body::Body::empty())?,
+                    _ => unreachable!(),
+                }
             } else {
-                res
-            };
-            res.status(StatusCode::OK)
-                .body(axum::body::Body::from(obj.body().unwrap().text().await?))? // TODO: stream the body instead, but this file is small, so it's fine
+                axum::response::Response::builder()
+                    .status(StatusCode::NOT_FOUND)
+                    .body(axum::body::Body::empty())?
+            }
         }
     };
     Ok(response)
@@ -45,18 +60,20 @@ async fn get_narinfo(
 async fn read(
     State(app): State<NixCacheApp>,
     Path(path): Path<String>,
+    Method(method): Method,
 ) -> Result<axum::response::Response, crate::Error> {
     if let Some((store_path, "narinfo")) = path.split_once('.') {
-        get_narinfo(State(app), Path(store_path.to_string())).await
+        get_narinfo(State(app), Path(store_path.to_string()), Method(method)).await
     } else {
-        unimplemented!()
+        Ok(axum::response::Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .body(axum::body::Body::from("Not implemented"))?)
     }
 }
 
 async fn get_nar(
     State(app): State<NixCacheApp>,
     Path(store_path): Path<String>,
-    Method(method): Method,
 ) -> Result<axum::response::Response, crate::Error> {
     if let Some((nar_id, "nar.zst")) = store_path.split_once('.')
         && let Ok(nar_id) = uuid::Uuid::from_str(nar_id)

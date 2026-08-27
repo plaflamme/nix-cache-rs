@@ -13,7 +13,7 @@ where
 
     async fn from_request_parts(
         parts: &mut http::request::Parts,
-        state: &S,
+        _state: &S,
     ) -> Result<Self, Self::Rejection> {
         Ok(Method(parts.method.clone()))
     }
