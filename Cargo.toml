@@ -36,6 +36,7 @@ uuid = { version = "1", default-features = false, features = [
 ] }
 url = { version = "2", default-features = false }
 web-time = "1.1"
+base64 = { version = "*", default-features = false, features = ["std"] }
 
 [profile.release]
 # Keep the .wasm small — CF Workers has a 10 MiB uncompressed module limit.

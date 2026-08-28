@@ -11,7 +11,7 @@ bucket_name = "nix-cache-test"
 github_username = "plaflamme"
 
 [secrets]
-required = ["R2_ENDPOINT", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"]
+required = ["R2_ENDPOINT", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "AUTH_TOKEN"]
 
 [observability]
 enabled = false

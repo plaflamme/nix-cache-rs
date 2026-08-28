@@ -35,7 +35,7 @@ struct GetCacheResponse {
     is_public: bool,
     name: String,
     permission: String,
-    preferred_compression_method: Compression,
+    preferred_compression_method: String,
     public_signing_keys: Vec<String>,
     uri: String,
 }
@@ -49,7 +49,7 @@ async fn get_cache(
         is_public: true,
         name,
         permission: "Write".to_string(),
-        preferred_compression_method: Compression::Zstd,
+        preferred_compression_method: Compression::Zstd.name().to_ascii_uppercase(),
         public_signing_keys: Vec::new(),
         uri: app.cache_endpoint().unwrap_or("".to_string()),
     })
