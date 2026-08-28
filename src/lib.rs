@@ -2,6 +2,7 @@
 #![feature(trim_prefix_suffix)]
 
 mod cachix;
+mod compression;
 mod error;
 mod extract;
 mod narinfo;
@@ -9,6 +10,7 @@ mod r2_sig;
 mod store;
 mod time;
 
+pub use compression::Compression;
 pub use error::Error;
 
 use tower_service::Service;

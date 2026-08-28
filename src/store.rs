@@ -8,7 +8,7 @@ use axum::{
 };
 use http::StatusCode;
 
-use crate::{NixCacheApp, cachix::bucket_key, extract::Method, r2_sig};
+use crate::{Compression, NixCacheApp, cachix::narfile_key, extract::Method, r2_sig};
 
 #[worker::send]
 #[axum_macros::debug_handler]
@@ -74,15 +74,16 @@ async fn get_nar(
     State(app): State<NixCacheApp>,
     Path(store_path): Path<String>,
 ) -> Result<axum::response::Response, crate::Error> {
-    if let Some((nar_id, "nar.zst")) = store_path.split_once('.')
-        && let Ok(nar_id) = uuid::Uuid::from_str(nar_id)
+    if let Some((nar_hash, extension)) = store_path.split_once('.')
+        && let Some(("nar", compression)) = extension.split_once('.') // TODO: handle no compression
+        && let Ok(compression) = Compression::from_str(compression)
     {
         let mut download_url = app.r2_endpoint()?;
         download_url
             .path_segments_mut()
             .expect("url can be base")
             .push(&app.bucket_name()?)
-            .extend(bucket_key("default", &nar_id).split('/')); // TODO: cache name from hostname
+            .extend(narfile_key("default", nar_hash, compression).split('/')); // TODO: cache name from hostname
 
         // https://github.com/cachix/cachix/blob/5ecbf73e1e742f527c0d970bef0a4c0d359a5ea7/cachix/src/Cachix/Client/Push/S3.hs#L108-L116
         crate::r2_sig::sign_request(&app, &mut download_url, http::Method::GET, &[])?;
@@ -97,7 +98,7 @@ async fn get_nar(
 
 async fn put_nar(
     State(app): State<NixCacheApp>,
-    Path(store_path): Path<String>,
+    Path(narfile): Path<String>,
 ) -> Result<axum::response::Redirect, crate::Error> {
     let mut upload_url = app.r2_endpoint()?;
     upload_url
@@ -106,7 +107,7 @@ async fn put_nar(
         .push(&app.bucket_name()?)
         .push("default")
         .push("nar")
-        .push(&store_path);
+        .push(&narfile);
 
     r2_sig::sign_request(&app, &mut upload_url, http::Method::PUT, &[])?;
     Ok(axum::response::Redirect::temporary(upload_url.as_str()))

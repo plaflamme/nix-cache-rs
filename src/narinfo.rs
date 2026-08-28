@@ -16,7 +16,7 @@ use harmonia_store_path::{FromStoreDirStr, StoreDir, StorePath};
 use harmonia_store_path_info::{NarHash, UnkeyedValidPathInfo};
 use harmonia_utils_hash::fmt::Any;
 
-use crate::cachix::NarInfoCreate;
+use crate::{Compression, cachix::NarInfoCreate};
 
 /// Validation/rendering errors for [`render_narinfo`].
 ///
@@ -49,7 +49,7 @@ pub enum NarInfoError {
 pub(crate) fn render_narinfo(
     create: &NarInfoCreate,
     nar_id: &Uuid,
-    origin: &str,
+    compression: Compression,
 ) -> Result<String, NarInfoError> {
     let nar_hash = parse_nar_hash("c_nar_hash", &create.c_nar_hash)?;
     let file_hash = parse_nar_hash("c_file_hash", &create.c_file_hash)?;
@@ -101,8 +101,8 @@ pub(crate) fn render_narinfo(
                 ca: None,
                 store_dir: StoreDir::default(),
             },
-            url: Some(format!("{origin}/nar/{nar_id}.nar.zst")),
-            compression: Some("zstd".to_string()),
+            url: Some(format!("nar/{nar_id}.nar.{}", compression.extension())),
+            compression: Some(compression.to_string()),
             download_hash: Some(file_hash.into()),
             download_size: Some(create.c_file_size),
         },
@@ -159,10 +159,10 @@ mod tests {
     fn renders_real_readline_payload() {
         let create = sample_create();
         let nar_id = Uuid::nil();
-        let text = render_narinfo(&create, &nar_id, "https://cache.example.com").unwrap();
+        let text = render_narinfo(&create, &nar_id, Compression::Zstd).unwrap();
         let expected = format!(
             "StorePath: /nix/store/4myf3s1i9rahd2my1zs2cqify7y930sk-readline-8.3p3\n\
-             URL: https://cache.example.com/nar/{nar_id}.nar.zst\n\
+             URL: nar/{nar_id}.nar.zst\n\
              Compression: zstd\n\
              FileHash: sha256:1gryjhjb0kwdbv8xrap77ac7nbx2w39zl24g6pq3s5kh8rjayqp3\n\
              FileSize: 212516\n\
@@ -176,26 +176,17 @@ mod tests {
     }
 
     #[test]
-    fn url_uses_origin_and_nar_id() {
-        let create = sample_create();
-        let nar_id = Uuid::new_v4();
-        let text = render_narinfo(&create, &nar_id, "https://cache.other-host.org").unwrap();
-        let url = format!("URL: https://cache.other-host.org/nar/{nar_id}.nar.zst\n");
-        assert!(text.contains(&url), "missing {url:?} in:\n{text}");
-    }
-
-    #[test]
     fn omits_references_line_when_empty() {
         let mut create = sample_create();
         create.c_references = vec![];
-        let text = render_narinfo(&create, &Uuid::nil(), "https://cache.example.com").unwrap();
+        let text = render_narinfo(&create, &Uuid::nil(), Compression::Zstd).unwrap();
         assert!(!text.contains("References:"));
     }
 
     #[test]
     fn round_trips_through_crate_parser() {
         let create = sample_create();
-        let text = render_narinfo(&create, &Uuid::nil(), "https://cache.example.com").unwrap();
+        let text = render_narinfo(&create, &Uuid::nil(), Compression::Zstd).unwrap();
         let parsed = parse_narinfo_txt(&StoreDir::default(), &text).unwrap();
         assert_eq!(
             parsed.path.name(),
@@ -216,7 +207,7 @@ mod tests {
     fn rejects_invalid_nar_hash() {
         let mut create = sample_create();
         create.c_nar_hash = "not-a-nar-hash".to_string();
-        let err = render_narinfo(&create, &Uuid::nil(), "https://cache.example.com").unwrap_err();
+        let err = render_narinfo(&create, &Uuid::nil(), Compression::Zstd).unwrap_err();
         assert!(
             matches!(err, NarInfoError::Invalid { .. }),
             "unexpected error: {err:?}"
@@ -227,7 +218,7 @@ mod tests {
     fn rejects_invalid_file_hash() {
         let mut create = sample_create();
         create.c_file_hash = "xyz".to_string();
-        let err = render_narinfo(&create, &Uuid::nil(), "https://cache.example.com").unwrap_err();
+        let err = render_narinfo(&create, &Uuid::nil(), Compression::Zstd).unwrap_err();
         assert!(
             matches!(err, NarInfoError::Invalid { .. }),
             "unexpected error: {err:?}"
@@ -238,7 +229,7 @@ mod tests {
     fn rejects_invalid_store_path() {
         let mut create = sample_create();
         create.c_store_hash = "!!!not-base32!!!".to_string();
-        let err = render_narinfo(&create, &Uuid::nil(), "https://cache.example.com").unwrap_err();
+        let err = render_narinfo(&create, &Uuid::nil(), Compression::Zstd).unwrap_err();
         assert!(
             matches!(err, NarInfoError::Invalid { .. }),
             "unexpected error: {err:?}"
@@ -249,7 +240,7 @@ mod tests {
     fn rejects_invalid_reference() {
         let mut create = sample_create();
         create.c_references = vec!["not-a-store-path".to_string()];
-        let err = render_narinfo(&create, &Uuid::nil(), "https://cache.example.com").unwrap_err();
+        let err = render_narinfo(&create, &Uuid::nil(), Compression::Zstd).unwrap_err();
         assert!(
             matches!(err, NarInfoError::Invalid { .. }),
             "unexpected error: {err:?}"

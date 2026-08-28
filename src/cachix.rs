@@ -1,3 +1,4 @@
+use crate::Compression;
 use crate::NixCacheApp;
 use crate::cache_info;
 
@@ -13,8 +14,18 @@ use uuid::Uuid;
 use worker::HttpMetadata;
 use worker::UploadedPart;
 
-pub fn bucket_key(cache_name: &str, nar_id: &uuid::Uuid) -> String {
-    format!("{cache_name}/nar/{nar_id}.zst")
+pub fn narfile_key(cache_name: &str, nar_hash: &str, compression: Compression) -> String {
+    match compression {
+        Compression::None => format!("{cache_name}/nar/{nar_hash}.nar"),
+        _ => format!(
+            "{cache_name}/nar/{nar_hash}.nar.{}",
+            compression.extension()
+        ),
+    }
+}
+
+pub fn narinfo_key(cache_name: &str, store_hash: &str) -> String {
+    format!("{cache_name}/{store_hash}.narinfo")
 }
 
 #[derive(Serialize)]
@@ -24,7 +35,7 @@ struct GetCacheResponse {
     is_public: bool,
     name: String,
     permission: String,
-    preferred_compression_method: String,
+    preferred_compression_method: Compression,
     public_signing_keys: Vec<String>,
     uri: String,
 }
@@ -38,14 +49,27 @@ async fn get_cache(
         is_public: true,
         name,
         permission: "Write".to_string(),
-        preferred_compression_method: "ZSTD".to_string(),
+        preferred_compression_method: Compression::Zstd,
         public_signing_keys: Vec::new(),
         uri: app.cache_endpoint().unwrap_or("".to_string()),
     })
 }
 
-async fn missing_narinfo(Json(hashes): Json<Vec<String>>) -> (StatusCode, Json<Vec<String>>) {
-    (StatusCode::OK, Json(hashes))
+#[worker::send]
+async fn missing_narinfo(
+    State(app): State<NixCacheApp>,
+    Path(name): Path<String>,
+    Json(hashes): Json<Vec<String>>,
+) -> Result<Json<Vec<String>>, crate::Error> {
+    let bucket = app.bucket()?;
+    let mut missing_hashes = Vec::new();
+    for store_hash in hashes {
+        let narinfo_object = bucket.head(narinfo_key(&name, &store_hash)).await?;
+        if narinfo_object.is_none() {
+            missing_hashes.push(store_hash);
+        }
+    }
+    Ok(Json(missing_hashes))
 }
 
 #[derive(Serialize)]
@@ -58,7 +82,7 @@ struct CreateMultipartUploadResponse {
 #[derive(Deserialize)]
 #[allow(unused)]
 struct CompressionParam {
-    compression: Option<String>,
+    compression: Option<Compression>,
 }
 
 #[worker::send]
@@ -68,11 +92,16 @@ async fn create_multipart_upload(
     State(app): State<NixCacheApp>,
     Query(param): Query<CompressionParam>,
 ) -> Result<Json<CreateMultipartUploadResponse>, crate::Error> {
-    validate_compression(param.compression.as_deref())?;
+    let compression = param.compression.unwrap_or(Compression::None);
     let bucket = app.bucket()?;
     let nar_id = Uuid::new_v4();
+    let metadata = HttpMetadata {
+        content_type: Some("application/x-nix-nar".to_string()),
+        ..Default::default()
+    };
     let multipart_upload = bucket
-        .create_multipart_upload(bucket_key(&name, &nar_id))
+        .create_multipart_upload(narfile_key(&name, &nar_id.to_string(), compression))
+        .http_metadata(metadata)
         .execute()
         .await?;
     let upload_id = multipart_upload.upload_id().await;
@@ -107,7 +136,7 @@ async fn retrieve_presigned_url(
         .path_segments_mut()
         .expect("url can be base")
         .push(&app.bucket_name()?)
-        .extend(bucket_key(&name, &nar_id).split('/'));
+        .extend(narfile_key(&name, &nar_id.to_string(), Compression::Zstd).split('/')); // TODO: how do we know what compression is used?
     upload_url
         .query_pairs_mut()
         .append_pair("uploadId", &params.upload_id)
@@ -145,18 +174,6 @@ pub(crate) struct NarInfoCreate {
     pub(crate) c_store_suffix: String,
 }
 
-/// Validates the `?compression=` query parameter of
-/// `create_multipart_upload`. An absent value means the client default, which
-/// we also treat as zstd — the only compression this cache accepts.
-fn validate_compression(compression: Option<&str>) -> Result<(), crate::Error> {
-    match compression.unwrap_or("none") {
-        value if value.eq_ignore_ascii_case("zstd") || value.eq_ignore_ascii_case("zst") => Ok(()),
-        other => Err(crate::Error::Validation {
-            field: "compression",
-            message: format!("only \"zstd\" is supported, got: {other}"),
-        }),
-    }
-}
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 struct CompletedPart {
@@ -186,7 +203,10 @@ async fn complete_multipart_upload(
     Json(request): Json<CompleteMultipartUploadRequest>,
 ) -> Result<StatusCode, crate::Error> {
     let bucket = app.bucket()?;
-    let upload = bucket.resume_multipart_upload(bucket_key(&name, &nar_id), params.upload_id);
+    let upload = bucket.resume_multipart_upload(
+        narfile_key(&name, &nar_id.to_string(), Compression::Zstd), // TODO: how do we know what compression is being used?
+        params.upload_id,
+    );
 
     let upload = match upload {
         Ok(u) => u,
@@ -206,7 +226,7 @@ async fn complete_multipart_upload(
         .await;
 
     let nar_info_txt =
-        crate::narinfo::render_narinfo(&request.nar_info_create, &nar_id, &app.cache_endpoint()?)?;
+        crate::narinfo::render_narinfo(&request.nar_info_create, &nar_id, Compression::Zstd)?; // TODO: how do we know what compression is being used?
 
     let metadata = HttpMetadata {
         content_type: Some("text/x-nix-narinfo".to_string()),
@@ -214,7 +234,7 @@ async fn complete_multipart_upload(
     };
     bucket
         .put(
-            format!("{}/{}.narinfo", name, request.nar_info_create.c_store_hash),
+            narinfo_key(&name, &request.nar_info_create.c_store_hash),
             nar_info_txt,
         )
         .http_metadata(metadata)
@@ -247,24 +267,4 @@ pub fn router(state: NixCacheApp) -> axum::Router {
             post(complete_multipart_upload),
         )
         .with_state(state)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn compression_accepts_zstd_or_absent() {
-        assert!(validate_compression(Some("zst")).is_ok());
-        assert!(validate_compression(Some("zstd")).is_ok());
-        assert!(validate_compression(Some("ZSTD")).is_ok());
-    }
-
-    #[test]
-    fn compression_rejects_other_methods() {
-        assert!(validate_compression(None).is_err());
-        assert!(validate_compression(Some("xz")).is_err());
-        assert!(validate_compression(Some("none")).is_err());
-        assert!(validate_compression(Some("")).is_err());
-    }
 }
