@@ -1,5 +1,6 @@
 use aws_sigv4::{http_request::SigningError, sign::v4::signing_params::BuildError};
 use axum::response::IntoResponse;
+use harmonia_store_nar_info::NarInfoParseError;
 use thiserror::Error;
 
 use crate::narinfo::NarInfoError;
@@ -16,6 +17,8 @@ pub enum Error {
     HttpError(#[from] http::Error),
     #[error("Invalid narinfo: {0}")]
     NarInfoError(#[from] NarInfoError),
+    #[error("Invalid narinfo: {0}")]
+    NarInfoParseError(#[from] NarInfoParseError),
     /// A client-supplied value failed validation. Rendered as HTTP 400.
     #[error("validation error: {field}: {message}")]
     Validation {
@@ -29,6 +32,7 @@ impl IntoResponse for Error {
         let status = match &self {
             Error::Validation { .. } => http::StatusCode::BAD_REQUEST,
             Error::NarInfoError { .. } => http::StatusCode::BAD_REQUEST,
+            Error::NarInfoParseError { .. } => http::StatusCode::BAD_REQUEST,
             _ => http::StatusCode::INTERNAL_SERVER_ERROR,
         };
         (status, self.to_string()).into_response()

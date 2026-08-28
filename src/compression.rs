@@ -35,9 +35,9 @@ impl FromStr for Compression {
             "none" => Ok(Self::None),
             "zstd" | "zst" => Ok(Self::Zstd),
             "xz" => Ok(Self::Xz),
-            _ => Err(crate::Error::Validation {
-                field: "compression",
-                message: "unsupported compression".to_string(),
+            other => Err(crate::Error::Validation {
+                field: "Compression",
+                message: format!("unsupported compression {other}"),
             }),
         }
     }

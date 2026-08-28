@@ -228,16 +228,15 @@ async fn complete_multipart_upload(
     let nar_info_txt =
         crate::narinfo::render_narinfo(&request.nar_info_create, &nar_id, Compression::Zstd)?; // TODO: how do we know what compression is being used?
 
-    let metadata = HttpMetadata {
-        content_type: Some("text/x-nix-narinfo".to_string()),
-        ..Default::default()
-    };
     bucket
         .put(
             narinfo_key(&name, &request.nar_info_create.c_store_hash),
             nar_info_txt,
         )
-        .http_metadata(metadata)
+        .http_metadata(HttpMetadata {
+            content_type: Some("text/x-nix-narinfo".to_string()),
+            ..Default::default()
+        })
         .execute()
         .await?;
 

@@ -559,7 +559,7 @@ dependencies = [
 [[package]]
 name = "harmonia-store-content-address"
 version = "3.2.0"
-source = "git+https://github.com/plaflamme/harmonia?branch=move-io-from-utils-hash#dcb54efa6f83392a8bff0846022ee769d3248973"
+source = "git+https://github.com/plaflamme/harmonia?branch=wasm-fixes#a2f3183396e13c8e9336af2bae2e90138f5940ec"
 dependencies = [
  "derive_more",
  "harmonia-store-path",
@@ -571,7 +571,7 @@ dependencies = [
 [[package]]
 name = "harmonia-store-nar-info"
 version = "3.2.0"
-source = "git+https://github.com/plaflamme/harmonia?branch=move-io-from-utils-hash#dcb54efa6f83392a8bff0846022ee769d3248973"
+source = "git+https://github.com/plaflamme/harmonia?branch=wasm-fixes#a2f3183396e13c8e9336af2bae2e90138f5940ec"
 dependencies = [
  "harmonia-store-content-address",
  "harmonia-store-path",
@@ -585,7 +585,7 @@ dependencies = [
 [[package]]
 name = "harmonia-store-path"
 version = "3.2.0"
-source = "git+https://github.com/plaflamme/harmonia?branch=move-io-from-utils-hash#dcb54efa6f83392a8bff0846022ee769d3248973"
+source = "git+https://github.com/plaflamme/harmonia?branch=wasm-fixes#a2f3183396e13c8e9336af2bae2e90138f5940ec"
 dependencies = [
  "derive_more",
  "harmonia-utils-base-encoding",
@@ -598,7 +598,7 @@ dependencies = [
 [[package]]
 name = "harmonia-store-path-info"
 version = "3.2.0"
-source = "git+https://github.com/plaflamme/harmonia?branch=move-io-from-utils-hash#dcb54efa6f83392a8bff0846022ee769d3248973"
+source = "git+https://github.com/plaflamme/harmonia?branch=wasm-fixes#a2f3183396e13c8e9336af2bae2e90138f5940ec"
 dependencies = [
  "harmonia-store-content-address",
  "harmonia-store-path",
@@ -610,7 +610,7 @@ dependencies = [
 [[package]]
 name = "harmonia-utils-base-encoding"
 version = "0.0.0-alpha.0"
-source = "git+https://github.com/plaflamme/harmonia?branch=move-io-from-utils-hash#dcb54efa6f83392a8bff0846022ee769d3248973"
+source = "git+https://github.com/plaflamme/harmonia?branch=wasm-fixes#a2f3183396e13c8e9336af2bae2e90138f5940ec"
 dependencies = [
  "data-encoding",
  "derive_more",
@@ -620,7 +620,7 @@ dependencies = [
 [[package]]
 name = "harmonia-utils-hash"
 version = "0.0.0-alpha.0"
-source = "git+https://github.com/plaflamme/harmonia?branch=move-io-from-utils-hash#dcb54efa6f83392a8bff0846022ee769d3248973"
+source = "git+https://github.com/plaflamme/harmonia?branch=wasm-fixes#a2f3183396e13c8e9336af2bae2e90138f5940ec"
 dependencies = [
  "blake3",
  "data-encoding",
@@ -637,7 +637,7 @@ dependencies = [
 [[package]]
 name = "harmonia-utils-signature"
 version = "3.2.0"
-source = "git+https://github.com/plaflamme/harmonia?branch=move-io-from-utils-hash#dcb54efa6f83392a8bff0846022ee769d3248973"
+source = "git+https://github.com/plaflamme/harmonia?branch=wasm-fixes#a2f3183396e13c8e9336af2bae2e90138f5940ec"
 dependencies = [
  "data-encoding",
  "ed25519-dalek",

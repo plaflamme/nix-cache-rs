@@ -11,7 +11,7 @@ use std::{collections::BTreeSet, str::FromStr};
 
 use uuid::Uuid;
 
-use harmonia_store_nar_info::{NarInfo, UnkeyedNarInfo, format_narinfo_txt};
+use harmonia_store_nar_info::{NarInfo, UnkeyedNarInfo, format_narinfo_txt, parse_narinfo_txt};
 use harmonia_store_path::{FromStoreDirStr, StoreDir, StorePath};
 use harmonia_store_path_info::{NarHash, UnkeyedValidPathInfo};
 use harmonia_utils_hash::fmt::Any;
@@ -112,6 +112,10 @@ pub(crate) fn render_narinfo(
     // The crate only emits ASCII (validated paths and hashes, plus the URL
     // built above), so this cannot fail.
     Ok(String::from_utf8(bytes).expect("NarInfo text is ASCII"))
+}
+
+pub(crate) fn parse_narinfo(txt: &str) -> Result<NarInfo, crate::Error> {
+    Ok(parse_narinfo_txt(&StoreDir::default(), txt)?)
 }
 
 /// Parses a hash field in any of the encodings the client sends:
