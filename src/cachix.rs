@@ -214,10 +214,7 @@ async fn complete_multipart_upload(
     };
     bucket
         .put(
-            format!(
-                "{}/nix/store/{}.narinfo",
-                name, request.nar_info_create.c_store_hash
-            ),
+            format!("{}/{}.narinfo", name, request.nar_info_create.c_store_hash),
             nar_info_txt,
         )
         .http_metadata(metadata)

@@ -1,15 +1,14 @@
 use std::str::FromStr;
 
-use aws_sigv4::http_request::{SignableBody, SignableRequest};
 use axum::{
     Router,
     extract::{Path, State},
     response::IntoResponse,
-    routing::get,
+    routing::{get, put},
 };
 use http::StatusCode;
 
-use crate::{NixCacheApp, cachix::bucket_key, extract::Method};
+use crate::{NixCacheApp, cachix::bucket_key, extract::Method, r2_sig};
 
 #[worker::send]
 #[axum_macros::debug_handler]
@@ -21,7 +20,7 @@ async fn get_narinfo(
     let bucket = app.bucket()?;
     let cache_name = "default"; // TODO: extract from worker URI
     let object = bucket
-        .get(format!("{cache_name}/nix/store/{store_hash}.narinfo"))
+        .get(format!("{cache_name}/{store_hash}.narinfo"))
         .execute()
         .await?;
 
@@ -91,6 +90,44 @@ async fn get_nar(
         Ok(axum::response::Redirect::temporary(download_url.as_str()).into_response())
     } else {
         Ok(axum::response::Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(axum::body::Body::empty())?)
+    }
+}
+
+async fn put_nar(
+    State(app): State<NixCacheApp>,
+    Path(store_path): Path<String>,
+) -> Result<axum::response::Redirect, crate::Error> {
+    let mut upload_url = app.r2_endpoint()?;
+    upload_url
+        .path_segments_mut()
+        .expect("url can be base")
+        .push(&app.bucket_name()?)
+        .push("default")
+        .push("nar")
+        .push(&store_path);
+
+    r2_sig::sign_request(&app, &mut upload_url, http::Method::PUT, &[])?;
+    Ok(axum::response::Redirect::temporary(upload_url.as_str()))
+}
+
+async fn put_narinfo(
+    State(app): State<NixCacheApp>,
+    Path(store_path): Path<String>,
+) -> Result<axum::response::Response, crate::Error> {
+    if let Some((_, "narinfo")) = store_path.split_once('.') {
+        let mut upload_url = app.r2_endpoint()?;
+        upload_url
+            .path_segments_mut()
+            .expect("url can be base")
+            .push(&app.bucket_name()?)
+            .push("default")
+            .push(&store_path);
+        r2_sig::sign_request(&app, &mut upload_url, http::Method::PUT, &[])?;
+        Ok(axum::response::Redirect::temporary(upload_url.as_str()).into_response())
+    } else {
+        Ok(axum::response::Response::builder()
             .status(StatusCode::BAD_REQUEST)
             .body(axum::body::Body::empty())?)
     }
@@ -100,6 +137,8 @@ pub fn router(state: NixCacheApp) -> axum::Router {
     // https://fzakaria.github.io/nix-http-binary-cache-api-spec
     Router::new()
         .route("/{store_hash}", get(read))
+        .route("/{store_hash}", put(put_narinfo))
         .route("/nar/{store_hash}", get(get_nar))
+        .route("/nar/{store_hash}", put(put_nar))
         .with_state(state)
 }
