@@ -1,60 +1,64 @@
-use std::str::FromStr;
+use std::{str::FromStr, sync::Arc};
 
 use harmonia_utils_signature::SecretKey;
-use worker::Env;
+use url::Url;
+use worker::{Bucket, Env};
 
 #[derive(Clone)]
 pub struct NixCacheApp {
-    env: Env,
+    pub auth_token: String,
+    pub cache_endpoint: url::Url,
+    pub bucket: Arc<Bucket>,
+    pub bucket_name: String,
+    pub github_username: String,
+    pub signing_secret_key: Arc<SecretKey>,
+    pub r2_endpoint: url::Url,
+    r2_access_key_id: String,
+    r2_secret_access_key: String,
 }
 
 impl NixCacheApp {
-    pub(super) fn new(env: Env) -> Self {
-        Self { env }
-    }
-
-    pub fn auth_token(&self) -> worker::Result<String> {
-        Ok(self.env.secret("AUTH_TOKEN")?.to_string())
-    }
-
-    pub fn cache_endpoint(&self) -> worker::Result<url::Url> {
-        Ok(url::Url::from_str(&format!(
-            "https://{}",
-            self.env.var("cache_hostname")?
-        ))?)
-    }
-
-    pub fn bucket(&self) -> worker::Result<worker::Bucket> {
-        self.env.bucket("nix-cache-bucket")
-    }
-
-    pub fn bucket_name(&self) -> worker::Result<String> {
-        Ok(self.env.var("bucket_name")?.to_string())
-    }
-
-    pub fn github_username(&self) -> worker::Result<String> {
-        Ok(self.env.var("github_username")?.to_string())
-    }
-
-    pub fn signing_secret_key(&self) -> Result<SecretKey, crate::Error> {
-        Ok(SecretKey::from_str(&format!(
-            "{}:{}",
-            self.env.var("cache_hostname")?,
-            &self.env.secret("SIGNING_PRIVATE_KEY")?
-        ))?)
+    pub fn auth_token(&self) -> &str {
+        &self.auth_token
     }
 
     pub fn r2_credentials(&self) -> worker::Result<aws_credential_types::Credentials> {
         Ok(aws_credential_types::Credentials::builder()
-            .access_key_id(self.env.var("R2_ACCESS_KEY_ID")?.to_string())
-            .secret_access_key(self.env.var("R2_SECRET_ACCESS_KEY")?.to_string())
+            .access_key_id(self.r2_access_key_id.clone())
+            .secret_access_key(self.r2_secret_access_key.clone())
             .provider_name("provider_name")
             .build())
     }
+}
 
-    pub fn r2_endpoint(&self) -> worker::Result<url::Url> {
-        Ok(url::Url::parse(
-            &self.env.secret("R2_ENDPOINT")?.to_string(),
-        )?)
+impl TryFrom<Env> for NixCacheApp {
+    type Error = crate::Error;
+
+    fn try_from(env: Env) -> Result<Self, Self::Error> {
+        let cache_hostname = env.var("cache_hostname")?.to_string();
+        Ok(Self {
+            auth_token: env.secret("AUTH_TOKEN")?.to_string(),
+            cache_endpoint: Url::from_str(&format!("https://{cache_hostname}")).map_err(|e| {
+                crate::Error::Validation {
+                    field: "cache_hostname",
+                    message: e.to_string(),
+                }
+            })?,
+            bucket: Arc::new(env.bucket("nix-cache-bucket")?),
+            bucket_name: env.var("bucket_name")?.to_string(),
+            github_username: env.var("github_username")?.to_string(),
+            signing_secret_key: Arc::new(SecretKey::from_str(&format!(
+                "{cache_hostname}:{}",
+                &env.secret("SIGNING_PRIVATE_KEY")?
+            ))?),
+            r2_access_key_id: env.secret("R2_ACCESS_KEY_ID")?.to_string(),
+            r2_secret_access_key: env.secret("R2_SECRET_ACCESS_KEY")?.to_string(),
+            r2_endpoint: Url::from_str(&env.secret("R2_ENDPOINT")?.to_string()).map_err(|e| {
+                crate::Error::Validation {
+                    field: "R2_ENDPOINT",
+                    message: e.to_string(),
+                }
+            })?,
+        })
     }
 }

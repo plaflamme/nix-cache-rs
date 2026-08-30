@@ -24,7 +24,7 @@ async fn get_narinfo(
     Path(store_hash): Path<String>,
     Method(method): Method,
 ) -> Result<axum::response::Response, crate::Error> {
-    let bucket = app.bucket()?;
+    let bucket = app.bucket;
     let cache_name = "default"; // TODO: extract from worker URI
     let object = bucket
         .get(format!("{cache_name}/{store_hash}.narinfo"))
@@ -70,7 +70,7 @@ async fn put_narinfo(
     narinfo_txt: String,
 ) -> Result<axum::response::Response, crate::Error> {
     if let Some((store_hash, "narinfo")) = store_path.split_once('.') {
-        let bucket = app.bucket()?;
+        let bucket = app.bucket;
         let narinfo = crate::narinfo::parse_narinfo(&narinfo_txt)?;
         if let Some(nar_hash) = narinfo.info.download_hash {
             let compression = narinfo
@@ -155,11 +155,11 @@ async fn get_nar(
         && let Some(("nar", compression)) = extension.split_once('.') // TODO: handle no compression
         && let Ok(compression) = Compression::from_str(compression)
     {
-        let mut download_url = app.r2_endpoint()?;
+        let mut download_url = app.r2_endpoint.clone();
         download_url
             .path_segments_mut()
             .expect("url can be base")
-            .push(&app.bucket_name()?)
+            .push(&app.bucket_name)
             .extend(narfile_key("default", nar_hash, compression).split('/')); // TODO: cache name from hostname
 
         // https://github.com/cachix/cachix/blob/5ecbf73e1e742f527c0d970bef0a4c0d359a5ea7/cachix/src/Cachix/Client/Push/S3.hs#L108-L116
@@ -177,11 +177,11 @@ async fn put_nar(
     State(app): State<NixCacheApp>,
     Path(narfile): Path<String>,
 ) -> Result<axum::response::Redirect, crate::Error> {
-    let mut upload_url = app.r2_endpoint()?;
+    let mut upload_url = app.r2_endpoint.clone();
     upload_url
         .path_segments_mut()
         .expect("url can be base")
-        .push(&app.bucket_name()?)
+        .push(&app.bucket_name)
         .push("default")
         .push("nar")
         .push(&narfile);

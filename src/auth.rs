@@ -33,7 +33,7 @@ pub async fn authenticate(
         && let Some((kind, param)) = authorization.split_once(' ')
         && let Some(token) = decode_auth_token(kind, param)
     {
-        if token == app.auth_token().unwrap() {
+        if token == app.auth_token {
             next.run(request).await
         } else {
             axum::response::Response::builder()

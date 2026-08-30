@@ -45,13 +45,13 @@ async fn get_cache(
     State(app): State<NixCacheApp>,
 ) -> Json<GetCacheResponse> {
     Json(GetCacheResponse {
-        github_username: app.github_username().unwrap_or("".to_string()),
+        github_username: app.github_username.clone(),
         is_public: true,
         name,
         permission: "Write".to_string(),
         preferred_compression_method: Compression::Zstd.name().to_ascii_uppercase(),
         public_signing_keys: Vec::new(),
-        uri: app.cache_endpoint().unwrap().to_string(),
+        uri: app.cache_endpoint.to_string(),
     })
 }
 
@@ -61,7 +61,7 @@ async fn missing_narinfo(
     Path(name): Path<String>,
     Json(hashes): Json<Vec<String>>,
 ) -> Result<Json<Vec<String>>, crate::Error> {
-    let bucket = app.bucket()?;
+    let bucket = app.bucket;
     let mut missing_hashes = Vec::new();
     for store_hash in hashes {
         let narinfo_object = bucket.head(narinfo_key(&name, &store_hash)).await?;
@@ -93,7 +93,7 @@ async fn create_multipart_upload(
     Query(param): Query<CompressionParam>,
 ) -> Result<Json<CreateMultipartUploadResponse>, crate::Error> {
     let compression = param.compression.unwrap_or(Compression::None);
-    let bucket = app.bucket()?;
+    let bucket = app.bucket;
     let nar_id = Uuid::new_v4();
     let metadata = HttpMetadata {
         content_type: Some("application/x-nix-nar".to_string()),
@@ -131,11 +131,11 @@ async fn retrieve_presigned_url(
     Query(params): Query<RetrievePreSignedUrlParameters>,
     Json(request): Json<RetrievePreSignedUrlRequest>,
 ) -> Result<Json<RetrievePreSignedUrlResponse>, crate::Error> {
-    let mut upload_url = app.r2_endpoint()?;
+    let mut upload_url = app.r2_endpoint.clone();
     upload_url
         .path_segments_mut()
         .expect("url can be base")
-        .push(&app.bucket_name()?)
+        .push(&app.bucket_name)
         .extend(narfile_key(&name, &nar_id.to_string(), Compression::Zstd).split('/')); // TODO: how do we know what compression is used?
     upload_url
         .query_pairs_mut()
@@ -202,7 +202,7 @@ async fn complete_multipart_upload(
     Query(params): Query<CompleteMultipartUploadParameterss>,
     Json(request): Json<CompleteMultipartUploadRequest>,
 ) -> Result<StatusCode, crate::Error> {
-    let bucket = app.bucket()?;
+    let bucket = app.bucket;
     let upload = bucket.resume_multipart_upload(
         narfile_key(&name, &nar_id.to_string(), Compression::Zstd), // TODO: how do we know what compression is being used?
         params.upload_id,
@@ -229,7 +229,7 @@ async fn complete_multipart_upload(
         &request.nar_info_create,
         &nar_id,
         Compression::Zstd, // TODO: how do we know what compression is being used?
-        &app.signing_secret_key()?,
+        &app.signing_secret_key,
     )?;
 
     bucket

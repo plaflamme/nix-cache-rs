@@ -13,6 +13,7 @@ mod store;
 mod time;
 
 pub use app::NixCacheApp;
+use axum::response::IntoResponse;
 pub use compression::Compression;
 pub use error::Error;
 
@@ -25,8 +26,7 @@ async fn cache_info() -> &'static str {
     "StoreDir: /nix/store\nPriority: 40\n"
 }
 
-fn router(env: Env) -> axum::Router {
-    let state = NixCacheApp::new(env);
+fn router(state: NixCacheApp) -> axum::Router {
     axum::Router::new()
         .route("/nix-cache-info", axum::routing::get(cache_info))
         .merge(store::router(state.clone()))
@@ -43,5 +43,8 @@ pub async fn fetch(
     env: Env,
     _ctx: Context,
 ) -> worker::Result<axum::http::Response<axum::body::Body>> {
-    Ok(router(env).call(req).await?)
+    match NixCacheApp::try_from(env) {
+        Ok(state) => Ok(router(state).call(req).await?),
+        Err(e) => Ok(e.into_response()),
+    }
 }
