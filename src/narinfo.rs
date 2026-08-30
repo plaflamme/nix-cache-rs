@@ -91,19 +91,18 @@ pub(crate) fn render_narinfo(
     );
     let signature = secret_key.sign(fingerprint);
 
-    let deriver = StorePath::from_store_dir_str(&StoreDir::default(), &create.c_deriver)
-        .or_else(|_| StorePath::from_str(&create.c_deriver))
-        .map_err(|e| NarInfoError::Invalid {
-            field: "deriver",
-            value: create.c_deriver.clone(),
-            message: e.to_string(),
-        })?;
+    let deriver = match create.c_deriver.as_str() {
+        "unknown-deriver" => None,
+        other => StorePath::from_store_dir_str(&StoreDir::default(), other)
+            .or_else(|_| StorePath::from_str(other))
+            .ok(),
+    };
 
     let narinfo = NarInfo {
         path: store_path,
         info: UnkeyedNarInfo {
             info: UnkeyedValidPathInfo {
-                deriver: Some(deriver),
+                deriver,
                 nar_hash,
                 references,
                 registration_time: None,
@@ -270,5 +269,13 @@ mod tests {
             matches!(err, NarInfoError::Invalid { .. }),
             "unexpected error: {err:?}"
         );
+    }
+
+    #[test]
+    fn accepts_unknown_deriver() {
+        let mut create = sample_create();
+        create.c_deriver = "unknown-deriver".to_string();
+        let result = render_narinfo(&create, &Uuid::nil(), Compression::Zstd, &secret_key());
+        assert!(result.is_ok());
     }
 }
