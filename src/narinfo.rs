@@ -9,11 +9,12 @@
 
 use std::{collections::BTreeSet, str::FromStr};
 
+use harmonia_utils_signature::SecretKey;
 use uuid::Uuid;
 
 use harmonia_store_nar_info::{NarInfo, UnkeyedNarInfo, format_narinfo_txt, parse_narinfo_txt};
 use harmonia_store_path::{FromStoreDirStr, StoreDir, StorePath};
-use harmonia_store_path_info::{NarHash, UnkeyedValidPathInfo};
+use harmonia_store_path_info::{NarHash, UnkeyedValidPathInfo, fingerprint_path};
 use harmonia_utils_hash::fmt::Any;
 
 use crate::{Compression, cachix::NarInfoCreate};
@@ -50,8 +51,10 @@ pub(crate) fn render_narinfo(
     create: &NarInfoCreate,
     nar_id: &Uuid,
     compression: Compression,
+    secret_key: &SecretKey,
 ) -> Result<String, NarInfoError> {
     let nar_hash = parse_nar_hash("c_nar_hash", &create.c_nar_hash)?;
+    let nar_size = create.c_nar_size;
     let file_hash = parse_nar_hash("c_file_hash", &create.c_file_hash)?;
 
     let base = format!("{}-{}", create.c_store_hash, create.c_store_suffix);
@@ -79,6 +82,15 @@ pub(crate) fn render_narinfo(
         }
     }
 
+    let fingerprint = fingerprint_path(
+        &StoreDir::default(),
+        &store_path,
+        &nar_hash,
+        nar_size,
+        &references,
+    );
+    let signature = secret_key.sign(fingerprint);
+
     let deriver = StorePath::from_store_dir_str(&StoreDir::default(), &create.c_deriver)
         .or_else(|_| StorePath::from_str(&create.c_deriver))
         .map_err(|e| NarInfoError::Invalid {
@@ -97,7 +109,7 @@ pub(crate) fn render_narinfo(
                 registration_time: None,
                 nar_size: create.c_nar_size,
                 ultimate: false,
-                signatures: BTreeSet::new(),
+                signatures: BTreeSet::from_iter([signature]),
                 ca: None,
                 store_dir: StoreDir::default(),
             },
@@ -139,6 +151,10 @@ mod tests {
     use harmonia_store_nar_info::parse_narinfo_txt;
     use harmonia_store_path::StorePathName;
 
+    fn secret_key() -> SecretKey {
+        SecretKey::from_str("foo:wFurlWwjshtzf8uD4kn9fe7PzPC5T7kXt1cniDRjmAxFa96Kw0kqwRxA+YUwgkfXu2+lY6NtCfyPfLjZbFoAhg==").unwrap()
+    }
+
     /// Real `narInfoCreate` payload captured from the push client pushing
     /// `/nix/store/4myf3s1i9rahd2my1zs2cqify7y930sk-readline-8.3p3`.
     fn sample_create() -> NarInfoCreate {
@@ -163,7 +179,7 @@ mod tests {
     fn renders_real_readline_payload() {
         let create = sample_create();
         let nar_id = Uuid::nil();
-        let text = render_narinfo(&create, &nar_id, Compression::Zstd).unwrap();
+        let text = render_narinfo(&create, &nar_id, Compression::Zstd, &secret_key()).unwrap();
         let expected = format!(
             "StorePath: /nix/store/4myf3s1i9rahd2my1zs2cqify7y930sk-readline-8.3p3\n\
              URL: nar/{nar_id}.nar.zst\n\
@@ -174,7 +190,8 @@ mod tests {
              NarSize: 506392\n\
              References: 0d8g8n0a11v6f5m2h416ajyxmnkwc3md-glibc-2.42-67 \
              zlvs6miv8wfki399pmxri7x0sjd3429c-ncurses-6.6\n\
-             Deriver: 28544zr6433qkx35zq4yq54kq0b8zj5f-readline.drv\n"
+             Deriver: 28544zr6433qkx35zq4yq54kq0b8zj5f-readline.drv\n\
+             Sig: foo:ePcu82qiu1qHs99rwNps4DbWTkYZxfpSwTmVynFH1WIjgHlBrm3jinKLhhU7OxOdXLO9ez6SjIPwkCfQAw/3CA==\n"
         );
         assert_eq!(text, expected);
     }
@@ -183,14 +200,14 @@ mod tests {
     fn omits_references_line_when_empty() {
         let mut create = sample_create();
         create.c_references = vec![];
-        let text = render_narinfo(&create, &Uuid::nil(), Compression::Zstd).unwrap();
+        let text = render_narinfo(&create, &Uuid::nil(), Compression::Zstd, &secret_key()).unwrap();
         assert!(!text.contains("References:"));
     }
 
     #[test]
     fn round_trips_through_crate_parser() {
         let create = sample_create();
-        let text = render_narinfo(&create, &Uuid::nil(), Compression::Zstd).unwrap();
+        let text = render_narinfo(&create, &Uuid::nil(), Compression::Zstd, &secret_key()).unwrap();
         let parsed = parse_narinfo_txt(&StoreDir::default(), &text).unwrap();
         assert_eq!(
             parsed.path.name(),
@@ -204,14 +221,15 @@ mod tests {
             parsed.info.info.deriver,
             Some(StorePath::from_str("28544zr6433qkx35zq4yq54kq0b8zj5f-readline.drv").unwrap())
         );
-        assert!(parsed.info.info.signatures.is_empty());
+        assert!(!parsed.info.info.signatures.is_empty());
     }
 
     #[test]
     fn rejects_invalid_nar_hash() {
         let mut create = sample_create();
         create.c_nar_hash = "not-a-nar-hash".to_string();
-        let err = render_narinfo(&create, &Uuid::nil(), Compression::Zstd).unwrap_err();
+        let err =
+            render_narinfo(&create, &Uuid::nil(), Compression::Zstd, &secret_key()).unwrap_err();
         assert!(
             matches!(err, NarInfoError::Invalid { .. }),
             "unexpected error: {err:?}"
@@ -222,7 +240,8 @@ mod tests {
     fn rejects_invalid_file_hash() {
         let mut create = sample_create();
         create.c_file_hash = "xyz".to_string();
-        let err = render_narinfo(&create, &Uuid::nil(), Compression::Zstd).unwrap_err();
+        let err =
+            render_narinfo(&create, &Uuid::nil(), Compression::Zstd, &secret_key()).unwrap_err();
         assert!(
             matches!(err, NarInfoError::Invalid { .. }),
             "unexpected error: {err:?}"
@@ -233,7 +252,8 @@ mod tests {
     fn rejects_invalid_store_path() {
         let mut create = sample_create();
         create.c_store_hash = "!!!not-base32!!!".to_string();
-        let err = render_narinfo(&create, &Uuid::nil(), Compression::Zstd).unwrap_err();
+        let err =
+            render_narinfo(&create, &Uuid::nil(), Compression::Zstd, &secret_key()).unwrap_err();
         assert!(
             matches!(err, NarInfoError::Invalid { .. }),
             "unexpected error: {err:?}"
@@ -244,7 +264,8 @@ mod tests {
     fn rejects_invalid_reference() {
         let mut create = sample_create();
         create.c_references = vec!["not-a-store-path".to_string()];
-        let err = render_narinfo(&create, &Uuid::nil(), Compression::Zstd).unwrap_err();
+        let err =
+            render_narinfo(&create, &Uuid::nil(), Compression::Zstd, &secret_key()).unwrap_err();
         assert!(
             matches!(err, NarInfoError::Invalid { .. }),
             "unexpected error: {err:?}"

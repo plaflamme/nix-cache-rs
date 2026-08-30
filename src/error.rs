@@ -1,6 +1,7 @@
 use aws_sigv4::{http_request::SigningError, sign::v4::signing_params::BuildError};
 use axum::response::IntoResponse;
 use harmonia_store_nar_info::NarInfoParseError;
+use harmonia_utils_signature::ParseKeyError;
 use thiserror::Error;
 
 use crate::narinfo::NarInfoError;
@@ -13,6 +14,8 @@ pub enum Error {
     BuildError(#[from] BuildError),
     #[error("Failed to sign: {0}")]
     SiningError(#[from] SigningError),
+    #[error("Failed to parse signing key: {0}")]
+    ParseKeyError(#[from] ParseKeyError),
     #[error("Http error: {0}")]
     HttpError(#[from] http::Error),
     #[error("Invalid narinfo: {0}")]

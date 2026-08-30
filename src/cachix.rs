@@ -51,7 +51,7 @@ async fn get_cache(
         permission: "Write".to_string(),
         preferred_compression_method: Compression::Zstd.name().to_ascii_uppercase(),
         public_signing_keys: Vec::new(),
-        uri: app.cache_endpoint().unwrap_or("".to_string()),
+        uri: app.cache_endpoint().unwrap().to_string(),
     })
 }
 
@@ -225,8 +225,12 @@ async fn complete_multipart_upload(
         }))
         .await;
 
-    let nar_info_txt =
-        crate::narinfo::render_narinfo(&request.nar_info_create, &nar_id, Compression::Zstd)?; // TODO: how do we know what compression is being used?
+    let nar_info_txt = crate::narinfo::render_narinfo(
+        &request.nar_info_create,
+        &nar_id,
+        Compression::Zstd, // TODO: how do we know what compression is being used?
+        &app.signing_secret_key()?,
+    )?;
 
     bucket
         .put(

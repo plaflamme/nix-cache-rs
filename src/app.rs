@@ -1,3 +1,6 @@
+use std::str::FromStr;
+
+use harmonia_utils_signature::SecretKey;
 use worker::Env;
 
 #[derive(Clone)]
@@ -14,8 +17,11 @@ impl NixCacheApp {
         Ok(self.env.secret("AUTH_TOKEN")?.to_string())
     }
 
-    pub fn cache_endpoint(&self) -> worker::Result<String> {
-        Ok(self.env.var("cache_endpoint")?.to_string())
+    pub fn cache_endpoint(&self) -> worker::Result<url::Url> {
+        Ok(url::Url::from_str(&format!(
+            "https://{}",
+            self.env.var("cache_hostname")?
+        ))?)
     }
 
     pub fn bucket(&self) -> worker::Result<worker::Bucket> {
@@ -28,6 +34,14 @@ impl NixCacheApp {
 
     pub fn github_username(&self) -> worker::Result<String> {
         Ok(self.env.var("github_username")?.to_string())
+    }
+
+    pub fn signing_secret_key(&self) -> Result<SecretKey, crate::Error> {
+        Ok(SecretKey::from_str(&format!(
+            "{}:{}",
+            self.env.var("cache_hostname")?,
+            &self.env.secret("SIGNING_PRIVATE_KEY")?
+        ))?)
     }
 
     pub fn r2_credentials(&self) -> worker::Result<aws_credential_types::Credentials> {

@@ -31,6 +31,7 @@
                   pkgs.wrangler
                   pkgs.worker-build
                   cachix-proxied
+                  pkgs.cachix
                   pkgs.mitmproxy
                 ];
               };
