@@ -27,7 +27,7 @@ async fn get_narinfo(
     let bucket = app.bucket;
     let cache_name = "default"; // TODO: extract from worker URI
     let object = bucket
-        .get(format!("{cache_name}/{store_hash}.narinfo"))
+        .get(narinfo_key(cache_name, &store_hash))
         .execute()
         .await?;
 

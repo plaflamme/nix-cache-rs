@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use crate::Compression;
 use crate::NixCacheApp;
 use crate::cache_info;
@@ -25,7 +27,11 @@ pub fn narfile_key(cache_name: &str, nar_hash: &str, compression: Compression) -
 }
 
 pub fn narinfo_key(cache_name: &str, store_hash: &str) -> String {
-    format!("{cache_name}/{store_hash}.narinfo")
+    format!("{cache_name}/narinfo/{store_hash}")
+}
+
+pub fn store_hash(narinfo_key: &str) -> Option<&str> {
+    narinfo_key.split('/').next_back()
 }
 
 #[derive(Serialize)]
@@ -58,18 +64,40 @@ async fn get_cache(
 #[worker::send]
 async fn missing_narinfo(
     State(app): State<NixCacheApp>,
-    Path(name): Path<String>,
-    Json(hashes): Json<Vec<String>>,
-) -> Result<Json<Vec<String>>, crate::Error> {
+    Path(cache_name): Path<String>,
+    Json(mut hashes): Json<BTreeSet<String>>,
+) -> Result<Json<BTreeSet<String>>, crate::Error> {
+    // NOTE: this approach doesn't scale well since we effectively have to list all narinfo objects in R2
+    // But it was chosen to avoid introducing another dependency, like KVStore or D1.
+    // Using `head` on each key is too slow
+
     let bucket = app.bucket;
-    let mut missing_hashes = Vec::new();
-    for store_hash in hashes {
-        let narinfo_object = bucket.head(narinfo_key(&name, &store_hash)).await?;
-        if narinfo_object.is_none() {
-            missing_hashes.push(store_hash);
+    let mut cursor = None;
+    while !hashes.is_empty() {
+        let list_objects = bucket.list().prefix(narinfo_key(&cache_name, ""));
+
+        let objects = match cursor {
+            Some(c) => list_objects.cursor(c),
+            None => list_objects,
+        }
+        .execute()
+        .await?;
+
+        cursor = objects.cursor();
+
+        for hash in objects.objects().into_iter().map(|o| {
+            store_hash(&o.key())
+                .expect("narinfo_key has a valid format")
+                .to_string()
+        }) {
+            hashes.remove(&hash);
+        }
+
+        if !objects.truncated() {
+            break;
         }
     }
-    Ok(Json(missing_hashes))
+    Ok(Json(hashes))
 }
 
 #[derive(Serialize)]
