@@ -33,20 +33,7 @@ pub enum NarInfoError {
 }
 
 /// Renders the pushed [`NarInfoCreate`] as `NarInfo` text.
-///
-/// * `create` — the `narInfoCreate` object from the multipart-complete
-///   request.
-/// * `nar_id` — the UUID from the `/complete` route, used in the `URL:` line.
-/// * `origin` — the request origin, e.g. `https://cache.example.com`.
-///
-/// The rendered text uses the standard field set only: `StorePath`, `URL`,
-/// `Compression`, `FileHash`, `FileSize`, `NarHash`, `NarSize`, and
-/// `References` (when non-empty). No `Sig`, `Deriver`, or `CA` is emitted:
-/// `c_sig` and `c_deriver` from the push payload are intentionally dropped.
-///
-/// The upload blob is assumed to be zstd-compressed (the only compression
-/// this cache accepts at upload initiation), so `Compression: zstd` is
-/// rendered and `FileHash`/`FileSize` describe the compressed upload.
+/// This will also sign the fingerprint and add it as a `Sig` entry of the resulting narinfo.
 pub(crate) fn render_narinfo(
     create: &NarInfoCreate,
     nar_id: &Uuid,
@@ -112,7 +99,7 @@ pub(crate) fn render_narinfo(
                 ca: None,
                 store_dir: StoreDir::default(),
             },
-            url: Some(format!("nar/{nar_id}.nar.{}", compression.extension())),
+            url: Some(format!("nar/{nar_id}.nar{}", compression.extension())),
             compression: Some(compression.to_string()),
             download_hash: Some(file_hash.into()),
             download_size: Some(create.c_file_size),

@@ -17,13 +17,7 @@ use worker::HttpMetadata;
 use worker::UploadedPart;
 
 pub fn narfile_key(cache_name: &str, nar_hash: &str, compression: Compression) -> String {
-    match compression {
-        Compression::None => format!("{cache_name}/nar/{nar_hash}.nar"),
-        _ => format!(
-            "{cache_name}/nar/{nar_hash}.nar.{}",
-            compression.extension()
-        ),
-    }
+    format!("{cache_name}/nar/{nar_hash}.nar{}", compression.extension())
 }
 
 pub fn narinfo_key(cache_name: &str, store_hash: &str) -> String {
@@ -52,7 +46,7 @@ async fn get_cache(
 ) -> Json<GetCacheResponse> {
     Json(GetCacheResponse {
         github_username: app.github_username.clone(),
-        is_public: true,
+        is_public: false,
         name,
         permission: "Write".to_string(),
         preferred_compression_method: Compression::Zstd.name().to_ascii_uppercase(),

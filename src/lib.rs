@@ -21,7 +21,6 @@ use tower_service::Service;
 
 use worker::{Context, Env, HttpRequest};
 
-#[axum_macros::debug_handler]
 async fn cache_info() -> &'static str {
     "StoreDir: /nix/store\nPriority: 40\n"
 }

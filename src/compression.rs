@@ -13,8 +13,8 @@ impl Compression {
     pub fn extension(&self) -> &'static str {
         match self {
             Self::None => "",
-            Self::Zstd => "zst",
-            Self::Xz => "xz",
+            Self::Zstd => ".zst",
+            Self::Xz => ".xz",
         }
     }
 
