@@ -9,7 +9,6 @@ pub struct NixCacheApp {
     pub auth_token: String,
     pub bucket: Arc<Bucket>,
     pub bucket_name: String,
-    pub github_username: String,
     pub signing_secret_key: Arc<SecretKey>,
     pub r2_endpoint: url::Url,
     r2_access_key_id: String,
@@ -38,7 +37,6 @@ impl TryFrom<Env> for NixCacheApp {
             auth_token: env.secret("AUTH_TOKEN")?.to_string(),
             bucket: Arc::new(env.bucket("nix-cache-bucket")?),
             bucket_name: env.var("bucket_name")?.to_string(),
-            github_username: env.var("github_username")?.to_string(),
             signing_secret_key: Arc::new(SecretKey::from_str(
                 &env.secret("SIGNING_PRIVATE_KEY")?.to_string(),
             )?),

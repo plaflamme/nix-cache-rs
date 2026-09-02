@@ -32,7 +32,7 @@ pub fn store_hash(narinfo_key: &str) -> Option<&str> {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct GetCacheResponse {
-    github_username: String,
+    github_username: &'static str,
     is_public: bool,
     name: String,
     permission: String,
@@ -44,7 +44,6 @@ struct GetCacheResponse {
 async fn get_cache(
     uri: OriginalUri,
     Path(name): Path<String>,
-    State(app): State<NixCacheApp>,
 ) -> Result<Json<GetCacheResponse>, crate::Error> {
     let mut uri = url::Url::parse(&uri.to_string()).expect("the original URI is a valid URL");
     uri.path_segments_mut()
@@ -52,7 +51,7 @@ async fn get_cache(
         .clear(); // We assume that if the client reached this endpoint using `https://whatever.com/api/v1/cache/foo`, then the cache is reachable at `https://whatever.com`
 
     Ok(Json(GetCacheResponse {
-        github_username: app.github_username.clone(),
+        github_username: "",
         is_public: false,
         name,
         permission: "Write".to_string(),

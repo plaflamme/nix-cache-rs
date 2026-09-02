@@ -7,8 +7,8 @@ command = "worker-build --release"
 
 [vars]
 bucket_name = "nix-cache"
-github_username = "plaflamme"
 public_key = "yDyyH9niunKMvnwckcYDoXbvzc7NqZGUmBa9aE6UOXg="
+
 [secrets]
 required = [
     "R2_ENDPOINT",
@@ -17,6 +17,11 @@ required = [
     "AUTH_TOKEN",
     "SIGNING_PRIVATE_KEY",
 ]
+
+[[r2_buckets]]
+bucket_name = "nix-cache"
+binding = "nix-cache-bucket"
+local_dev = { "experimental_s3_credentials" = { "accessKeyId" = "mock-local-key", "secretAccessKey" = "mock-local-secret" } }
 
 [observability]
 enabled = false
@@ -32,8 +37,3 @@ invocation_logs = true
 enabled = true
 persist = true
 head_sampling_rate = 1
-
-[[r2_buckets]]
-bucket_name = "nix-cache"
-binding = "nix-cache-bucket"
-local_dev = { "experimental_s3_credentials" = { "accessKeyId" = "mock-local-key", "secretAccessKey" = "mock-local-secret" } }
