@@ -1,6 +1,6 @@
 name = "nix-cache-rs"
 main = "build/worker/shim.mjs"
-compatibility_date = "2026-05-28"
+compatibility_date = "2026-08-01"
 
 [build]
 command = "worker-build --release"
@@ -9,7 +9,6 @@ command = "worker-build --release"
 bucket_name = "nix-cache"
 github_username = "plaflamme"
 public_key = "yDyyH9niunKMvnwckcYDoXbvzc7NqZGUmBa9aE6UOXg="
-
 [secrets]
 required = [
     "R2_ENDPOINT",
@@ -37,3 +36,4 @@ head_sampling_rate = 1
 [[r2_buckets]]
 bucket_name = "nix-cache"
 binding = "nix-cache-bucket"
+local_dev = { "experimental_s3_credentials" = { "accessKeyId" = "mock-local-key", "secretAccessKey" = "mock-local-secret" } }
