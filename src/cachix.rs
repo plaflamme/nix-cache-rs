@@ -4,6 +4,7 @@ use crate::Compression;
 use crate::NixCacheApp;
 use crate::cache_info;
 
+use axum::extract::OriginalUri;
 use axum::extract::Path;
 use axum::extract::Query;
 use axum::extract::State;
@@ -37,22 +38,28 @@ struct GetCacheResponse {
     permission: String,
     preferred_compression_method: String,
     public_signing_keys: Vec<String>,
-    uri: String,
+    uri: url::Url,
 }
 
 async fn get_cache(
+    uri: OriginalUri,
     Path(name): Path<String>,
     State(app): State<NixCacheApp>,
-) -> Json<GetCacheResponse> {
-    Json(GetCacheResponse {
+) -> Result<Json<GetCacheResponse>, crate::Error> {
+    let mut uri = url::Url::parse(&uri.to_string()).expect("the original URI is a valid URL");
+    uri.path_segments_mut()
+        .expect("original uri can be base")
+        .clear(); // We assume that if the client reached this endpoint using `https://whatever.com/api/v1/cache/foo`, then the cache is reachable at `https://whatever.com`
+
+    Ok(Json(GetCacheResponse {
         github_username: app.github_username.clone(),
         is_public: false,
         name,
         permission: "Write".to_string(),
         preferred_compression_method: Compression::Zstd.name().to_ascii_uppercase(),
         public_signing_keys: Vec::new(),
-        uri: app.cache_endpoint.to_string(),
-    })
+        uri,
+    }))
 }
 
 #[worker::send]

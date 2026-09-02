@@ -11,7 +11,6 @@ A nix binary cache backed by Cloudflare Workers and R2.
 * create R2 object lifecycle
 * create `wrangler.toml`
     * variables
-        * `cache_hostname`
         * `bucket_name`
         * `github_username`
         * `public_key`
@@ -24,7 +23,7 @@ A nix binary cache backed by Cloudflare Workers and R2.
     * `AUTH_TOKEN`
     * `SINGNING_PRIVATE_KEY`
 *  `wrangler deploy --secrets-file .env`
-*  update `cache_hostname`
+*  update `cache_endpoint`
 *  `wrangler deploy --secrets-file .env`
 
 That's it!
@@ -71,3 +70,9 @@ machine <cache_hostname>
   login ""
   password <auth_token>
 ```
+
+## dependabot
+
+Put the auth token in both Secrets & Variables / Actions and Secrets & Variables / Dependabot
+
+Or use `pull_request_target`

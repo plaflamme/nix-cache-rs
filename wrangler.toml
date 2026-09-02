@@ -6,13 +6,18 @@ compatibility_date = "2026-05-28"
 command = "worker-build --release"
 
 [vars]
-cache_hostname = "nix-cache-rs.philippe-e68.workers.dev" # catch-22: we can only know this after deploying the worker
 bucket_name = "nix-cache"
 github_username = "plaflamme"
-public_key="yDyyH9niunKMvnwckcYDoXbvzc7NqZGUmBa9aE6UOXg="
+public_key = "yDyyH9niunKMvnwckcYDoXbvzc7NqZGUmBa9aE6UOXg="
 
 [secrets]
-required = ["R2_ENDPOINT", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "AUTH_TOKEN", "SIGNING_PRIVATE_KEY"]
+required = [
+    "R2_ENDPOINT",
+    "R2_ACCESS_KEY_ID",
+    "R2_SECRET_ACCESS_KEY",
+    "AUTH_TOKEN",
+    "SIGNING_PRIVATE_KEY",
+]
 
 [observability]
 enabled = false
