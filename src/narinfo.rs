@@ -138,7 +138,7 @@ mod tests {
     use harmonia_store_path::StorePathName;
 
     fn secret_key() -> SecretKey {
-        SecretKey::from_str("foo:wFurlWwjshtzf8uD4kn9fe7PzPC5T7kXt1cniDRjmAxFa96Kw0kqwRxA+YUwgkfXu2+lY6NtCfyPfLjZbFoAhg==").unwrap()
+        SecretKey::from_str(include_str!("../tests/cache.example.com-1.sk")).unwrap()
     }
 
     /// Real `narInfoCreate` payload captured from the push client pushing
@@ -177,7 +177,7 @@ mod tests {
              References: 0d8g8n0a11v6f5m2h416ajyxmnkwc3md-glibc-2.42-67 \
              zlvs6miv8wfki399pmxri7x0sjd3429c-ncurses-6.6\n\
              Deriver: 28544zr6433qkx35zq4yq54kq0b8zj5f-readline.drv\n\
-             Sig: foo:ePcu82qiu1qHs99rwNps4DbWTkYZxfpSwTmVynFH1WIjgHlBrm3jinKLhhU7OxOdXLO9ez6SjIPwkCfQAw/3CA==\n"
+             Sig: cache.example.com-1:TaiCdsGXu8o3TzbTmvGg40M159q5jdlw5dd7QOHGbKHXqyeYWSURLEEKn6olV2nYOukq3tsp1sRQnFvVRjGSAg==\n"
         );
         assert_eq!(text, expected);
     }
