@@ -14,7 +14,7 @@ use crate::{
     Compression, NixCacheApp,
     cachix::{narfile_key, narinfo_key},
     extract::Method,
-    r2_sig,
+    narinfo, r2_sig,
 };
 
 #[worker::send]
@@ -37,9 +37,9 @@ async fn get_narinfo(
             .body(axum::body::Body::empty())?,
         Some(obj) => {
             if let Some(body) = obj.body() {
-                let res = axum::response::Response::builder()
-                    .status(StatusCode::OK)
-                    .header("Content-Length", obj.size());
+                // NOTE: we cannot set Content-Length because we add a signature on read
+                // TODO: is the signature length constant? If so, we can know how much more bytes we'll be adding to the object and can compute its resulting size
+                let res = axum::response::Response::builder().status(StatusCode::OK);
                 let res = if let Some(ct) = obj.http_metadata().content_type.as_ref() {
                     res.header("Content-Type", ct.clone())
                 } else {
@@ -47,8 +47,12 @@ async fn get_narinfo(
                 };
                 match method {
                     http::Method::GET => {
-                        // TODO: stream the body instead, but this file is small, so it's fine
-                        res.body(axum::body::Body::from(body.text().await?))?
+                        // Sign on read instead of write so we can more easily change keys
+                        let narinfo_txt = body.text().await?;
+                        let mut narinfo = crate::narinfo::parse_narinfo(&narinfo_txt)?;
+                        crate::narinfo::sign_narinfo(&mut narinfo, &app.signing_secret_key);
+                        let narinfo_txt = crate::narinfo::render_narinfo_text(&narinfo);
+                        res.body(axum::body::Body::from(narinfo_txt))?
                     }
                     http::Method::HEAD => res.body(axum::body::Body::empty())?,
                     _ => unreachable!(),

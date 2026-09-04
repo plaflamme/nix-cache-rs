@@ -43,6 +43,7 @@ struct GetCacheResponse {
 
 async fn get_cache(
     uri: OriginalUri,
+    State(app): State<NixCacheApp>,
     Path(name): Path<String>,
 ) -> Result<Json<GetCacheResponse>, crate::Error> {
     let mut uri = url::Url::parse(&uri.to_string()).expect("the original URI is a valid URL");
@@ -56,7 +57,7 @@ async fn get_cache(
         name,
         permission: "Write".to_string(),
         preferred_compression_method: Compression::Zstd.name().to_ascii_uppercase(),
-        public_signing_keys: Vec::new(),
+        public_signing_keys: vec![app.signing_public_key.to_string()],
         uri,
     }))
 }
@@ -253,17 +254,17 @@ async fn complete_multipart_upload(
         }))
         .await;
 
-    let nar_info_txt = crate::narinfo::render_narinfo(
+    let narinfo = crate::narinfo::build_narinfo(
         &request.nar_info_create,
         &nar_id,
         Compression::Zstd, // TODO: how do we know what compression is being used?
-        &app.signing_secret_key,
     )?;
+    let narinfo_txt = crate::narinfo::render_narinfo_text(&narinfo);
 
     bucket
         .put(
             narinfo_key(&name, &request.nar_info_create.c_store_hash),
-            nar_info_txt,
+            narinfo_txt,
         )
         .http_metadata(HttpMetadata {
             content_type: Some("text/x-nix-narinfo".to_string()),

@@ -34,14 +34,12 @@ pub enum NarInfoError {
 
 /// Renders the pushed [`NarInfoCreate`] as `NarInfo` text.
 /// This will also sign the fingerprint and add it as a `Sig` entry of the resulting narinfo.
-pub(crate) fn render_narinfo(
+pub(crate) fn build_narinfo(
     create: &NarInfoCreate,
     nar_id: &Uuid,
     compression: Compression,
-    secret_key: &SecretKey,
-) -> Result<String, NarInfoError> {
+) -> Result<NarInfo, NarInfoError> {
     let nar_hash = parse_nar_hash("c_nar_hash", &create.c_nar_hash)?;
-    let nar_size = create.c_nar_size;
     let file_hash = parse_nar_hash("c_file_hash", &create.c_file_hash)?;
 
     let base = format!("{}-{}", create.c_store_hash, create.c_store_suffix);
@@ -69,15 +67,6 @@ pub(crate) fn render_narinfo(
         }
     }
 
-    let fingerprint = fingerprint_path(
-        &StoreDir::default(),
-        &store_path,
-        &nar_hash,
-        nar_size,
-        &references,
-    );
-    let signature = secret_key.sign(fingerprint);
-
     let deriver = match create.c_deriver.as_str() {
         "unknown-deriver" => None,
         other => StorePath::from_store_dir_str(&StoreDir::default(), other)
@@ -85,7 +74,7 @@ pub(crate) fn render_narinfo(
             .ok(),
     };
 
-    let narinfo = NarInfo {
+    Ok(NarInfo {
         path: store_path,
         info: UnkeyedNarInfo {
             info: UnkeyedValidPathInfo {
@@ -95,7 +84,7 @@ pub(crate) fn render_narinfo(
                 registration_time: None,
                 nar_size: create.c_nar_size,
                 ultimate: false,
-                signatures: BTreeSet::from_iter([signature]),
+                signatures: BTreeSet::default(),
                 ca: None,
                 store_dir: StoreDir::default(),
             },
@@ -104,12 +93,26 @@ pub(crate) fn render_narinfo(
             download_hash: Some(file_hash.into()),
             download_size: Some(create.c_file_size),
         },
-    };
+    })
+}
 
+pub(crate) fn render_narinfo_text(narinfo: &NarInfo) -> String {
     let bytes = format_narinfo_txt(&StoreDir::default(), &narinfo);
     // The crate only emits ASCII (validated paths and hashes, plus the URL
     // built above), so this cannot fail.
-    Ok(String::from_utf8(bytes).expect("NarInfo text is ASCII"))
+    String::from_utf8(bytes).expect("NarInfo text is ASCII")
+}
+
+pub(crate) fn sign_narinfo(narinfo: &mut NarInfo, secret_key: &SecretKey) {
+    let fingerprint = fingerprint_path(
+        &StoreDir::default(),
+        &narinfo.path,
+        &narinfo.info.info.nar_hash,
+        narinfo.info.info.nar_size,
+        &narinfo.info.info.references,
+    );
+    let signature = secret_key.sign(fingerprint);
+    narinfo.info.info.signatures.insert(signature);
 }
 
 pub(crate) fn parse_narinfo(txt: &str) -> Result<NarInfo, crate::Error> {
@@ -165,7 +168,9 @@ mod tests {
     fn renders_real_readline_payload() {
         let create = sample_create();
         let nar_id = Uuid::nil();
-        let text = render_narinfo(&create, &nar_id, Compression::Zstd, &secret_key()).unwrap();
+        let mut narinfo = build_narinfo(&create, &nar_id, Compression::Zstd).unwrap();
+        sign_narinfo(&mut narinfo, &secret_key());
+        let text = render_narinfo_text(&narinfo);
         let expected = format!(
             "StorePath: /nix/store/4myf3s1i9rahd2my1zs2cqify7y930sk-readline-8.3p3\n\
              URL: nar/{nar_id}.nar.zst\n\
@@ -186,14 +191,15 @@ mod tests {
     fn omits_references_line_when_empty() {
         let mut create = sample_create();
         create.c_references = vec![];
-        let text = render_narinfo(&create, &Uuid::nil(), Compression::Zstd, &secret_key()).unwrap();
-        assert!(!text.contains("References:"));
+        let narinfo = build_narinfo(&create, &Uuid::nil(), Compression::Zstd).unwrap();
+        assert!(narinfo.info.info.references.is_empty());
     }
 
     #[test]
     fn round_trips_through_crate_parser() {
         let create = sample_create();
-        let text = render_narinfo(&create, &Uuid::nil(), Compression::Zstd, &secret_key()).unwrap();
+        let narinfo = build_narinfo(&create, &Uuid::nil(), Compression::Zstd).unwrap();
+        let text = render_narinfo_text(&narinfo);
         let parsed = parse_narinfo_txt(&StoreDir::default(), &text).unwrap();
         assert_eq!(
             parsed.path.name(),
@@ -207,15 +213,14 @@ mod tests {
             parsed.info.info.deriver,
             Some(StorePath::from_str("28544zr6433qkx35zq4yq54kq0b8zj5f-readline.drv").unwrap())
         );
-        assert!(!parsed.info.info.signatures.is_empty());
+        assert!(parsed.info.info.signatures.is_empty());
     }
 
     #[test]
     fn rejects_invalid_nar_hash() {
         let mut create = sample_create();
         create.c_nar_hash = "not-a-nar-hash".to_string();
-        let err =
-            render_narinfo(&create, &Uuid::nil(), Compression::Zstd, &secret_key()).unwrap_err();
+        let err = build_narinfo(&create, &Uuid::nil(), Compression::Zstd).unwrap_err();
         assert!(
             matches!(err, NarInfoError::Invalid { .. }),
             "unexpected error: {err:?}"
@@ -226,8 +231,7 @@ mod tests {
     fn rejects_invalid_file_hash() {
         let mut create = sample_create();
         create.c_file_hash = "xyz".to_string();
-        let err =
-            render_narinfo(&create, &Uuid::nil(), Compression::Zstd, &secret_key()).unwrap_err();
+        let err = build_narinfo(&create, &Uuid::nil(), Compression::Zstd).unwrap_err();
         assert!(
             matches!(err, NarInfoError::Invalid { .. }),
             "unexpected error: {err:?}"
@@ -238,8 +242,7 @@ mod tests {
     fn rejects_invalid_store_path() {
         let mut create = sample_create();
         create.c_store_hash = "!!!not-base32!!!".to_string();
-        let err =
-            render_narinfo(&create, &Uuid::nil(), Compression::Zstd, &secret_key()).unwrap_err();
+        let err = build_narinfo(&create, &Uuid::nil(), Compression::Zstd).unwrap_err();
         assert!(
             matches!(err, NarInfoError::Invalid { .. }),
             "unexpected error: {err:?}"
@@ -250,8 +253,7 @@ mod tests {
     fn rejects_invalid_reference() {
         let mut create = sample_create();
         create.c_references = vec!["not-a-store-path".to_string()];
-        let err =
-            render_narinfo(&create, &Uuid::nil(), Compression::Zstd, &secret_key()).unwrap_err();
+        let err = build_narinfo(&create, &Uuid::nil(), Compression::Zstd).unwrap_err();
         assert!(
             matches!(err, NarInfoError::Invalid { .. }),
             "unexpected error: {err:?}"
@@ -262,7 +264,7 @@ mod tests {
     fn accepts_unknown_deriver() {
         let mut create = sample_create();
         create.c_deriver = "unknown-deriver".to_string();
-        let result = render_narinfo(&create, &Uuid::nil(), Compression::Zstd, &secret_key());
+        let result = build_narinfo(&create, &Uuid::nil(), Compression::Zstd);
         assert!(result.is_ok());
     }
 }

@@ -1,6 +1,6 @@
 use std::{str::FromStr, sync::Arc};
 
-use harmonia_utils_signature::SecretKey;
+use harmonia_utils_signature::{PublicKey, SecretKey};
 use url::Url;
 use worker::{Bucket, Env};
 
@@ -9,6 +9,7 @@ pub struct NixCacheApp {
     pub auth_token: String,
     pub bucket: Arc<Bucket>,
     pub bucket_name: String,
+    pub signing_public_key: PublicKey,
     pub signing_secret_key: Arc<SecretKey>,
     pub r2_endpoint: url::Url,
     r2_access_key_id: String,
@@ -37,6 +38,9 @@ impl TryFrom<Env> for NixCacheApp {
             auth_token: env.secret("AUTH_TOKEN")?.to_string(),
             bucket: Arc::new(env.bucket("nix-cache-bucket")?),
             bucket_name: env.var("bucket_name")?.to_string(),
+            signing_public_key: PublicKey::from_str(
+                &env.secret("SIGNING_PUBLIC_KEY")?.to_string(),
+            )?,
             signing_secret_key: Arc::new(SecretKey::from_str(
                 &env.secret("SIGNING_PRIVATE_KEY")?.to_string(),
             )?),

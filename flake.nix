@@ -23,10 +23,6 @@
               exec ${pkgs.cachix}/bin/cachix "$@"
             '';
 
-            wrangler-dev = pkgs.writeShellScriptBin "wrangler-dev" ''
-              ${pkgs.wrangler}/bin/wrangler dev --var public_key:$(cat tests/cache.example.com-1.pk)
-            '';
-
             mock-auth-token = "mock-auth-token";
           in
           {
@@ -38,20 +34,20 @@
                   cachix-proxied
                   pkgs.cachix
                   pkgs.mitmproxy
-                  wrangler-dev
                 ];
 
                 MOCK_AUTH_TOKEN = "${mock-auth-token}";
 
                 shellHook = ''
                   TARGET_FILE=".env.local"
-                  cat << 'EOF' > "$TARGET_FILE"
+                  cat << EOF > "$TARGET_FILE"
                   # auto-generated, see flake.nix
                   AUTH_TOKEN=${mock-auth-token}
                   R2_ACCESS_KEY_ID=mock-local-key
                   R2_SECRET_ACCESS_KEY=mock-local-secret
                   R2_ENDPOINT=http://localhost:8787/cdn-cgi/local/r2/s3
-                  SIGNING_PRIVATE_KEY=$(cat tests/cache.example.com-1.sk)
+                  SIGNING_PUBLIC_KEY=''$(cat tests/cache.example.com-1.pk)
+                  SIGNING_PRIVATE_KEY=''$(cat tests/cache.example.com-1.sk)
                   EOF
                 '';
               };
