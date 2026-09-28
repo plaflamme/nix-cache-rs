@@ -97,7 +97,7 @@ pub(crate) fn build_narinfo(
 }
 
 pub(crate) fn render_narinfo_text(narinfo: &NarInfo) -> String {
-    let bytes = format_narinfo_txt(&StoreDir::default(), &narinfo);
+    let bytes = format_narinfo_txt(&StoreDir::default(), narinfo);
     // The crate only emits ASCII (validated paths and hashes, plus the URL
     // built above), so this cannot fail.
     String::from_utf8(bytes).expect("NarInfo text is ASCII")

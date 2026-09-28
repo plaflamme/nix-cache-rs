@@ -14,7 +14,7 @@ use crate::{
     Compression, NixCacheApp,
     cachix::{narfile_key, narinfo_key},
     extract::Method,
-    narinfo, r2_sig,
+    r2_sig,
 };
 
 #[worker::send]
