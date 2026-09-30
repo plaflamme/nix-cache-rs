@@ -1,5 +1,10 @@
-{ pkgs, nix-cache-rs, ... }:
+{
+  pkgs,
+  nix-cache-rs,
+  ...
+}:
 let
+  lib = pkgs.lib;
   mock-auth-token = "mock-auth-token";
   bucket-name = "nix-cache";
   access-key-id = "mock-local-key";
@@ -32,54 +37,70 @@ let
       }
     ];
   };
-in
-pkgs.stdenv.mkDerivation {
-  name = "simple";
-
-  src = ./.;
-
-  nativeBuildInputs = [
-    pkgs.wrangler
+  test-store-paths = [
+    pkgs.bash
     pkgs.curl
-    pkgs.cachix
-    pkgs.hello
-    pkgs.nix
   ];
+in
+pkgs.testers.runNixOSTest {
+  imports = [
+    {
+      name = "simple";
+      nodes = {
+        node1 =
+          { ... }:
+          {
+            nix = {
+              settings = {
+                extra-substituters = [ "http://localhost:8787" ];
+                extra-trusted-public-keys = [ public-key ];
+              };
 
-  buildPhase = ''
-    export HOME=\$TMPDIR
-    export CARGO_HOME=\$TMPDIR/.cargo
-    export CACHIX_AUTH_TOKEN="${mock-auth-token}"
+              extraOptions = ''
+                experimental-features = nix-command flakes
+              '';
+            };
 
-    export NIX_DATA_DIR=$TMPDIR/nix/share
-    export NIX_LOG_DIR=$TMPDIR/nix/var/log/nix
-    export NIX_STATE_DIR=$TMPDIR/nix/var/nix
-    # https://github.com/cachix/cachix/pull/723
-    # export NIX_STORE_DIR=$TMPDIR//nix/store
-    export NIX_STORE_DIR=/nix/store
+            environment.etc."wrangler.toml".source = wrangler-toml;
 
-    STORE_PATH=$(nix-store --add ${pkgs.hello})
+            system.extraDependencies = test-store-paths;
 
-    cp ${wrangler-toml} wrangler.toml
-    wrangler dev --local --log-level=debug &
-    WRANGLER_PID=$!
-    trap "kill $WRANGLER_PID 2>/dev/null || true" EXIT
-    sleep 1
+            environment.variables = {
+              CACHIX_AUTH_TOKEN = mock-auth-token;
+            };
 
-    curl http://:${mock-auth-token}@localhost:8787/nix-cache-info
+            systemd.services = {
+              "nix-cache-rs" = {
+                wants = [ "network-online.target" ];
+                wantedBy = [ "multi-user.target" ];
+                serviceConfig = {
+                  ExecStart = "${pkgs.wrangler}/bin/wrangler dev --local --log-level=debug -c /etc/wrangler.toml";
+                };
+              };
+            };
+          };
+      };
 
-    cachix -v --hostname http://localhost:8787 push default $STORE_PATH
-
-    nix --extra-experimental-features nix-command \
-      --offline \
-      copy \
-        --option extra-substituters "https://example.com" \
-        --option extra-trusted-public-keys "${public-key}" \
-        --verbose \
-        --from http://:${mock-auth-token}@localhost:8787 \
-        --to /tmp/store \
-        $STORE_PATH
-  '';
-
-  installPhase = "touch \$out";
+      testScript =
+        { ... }:
+        ''
+          start_all()
+          node1.wait_for_unit("nix-cache-rs")
+        ''
+        + lib.concatLines (
+          lib.map (pkg: ''
+            node1.succeed("${pkgs.cachix}/bin/cachix --hostname=http://localhost:8787 push default ${pkg}")
+            node1.succeed("nix copy --from http://:${mock-auth-token}@localhost:8787 --to /tmp/store ${pkg}")
+          '') test-store-paths
+        );
+    }
+  ];
+  node = {
+    pkgsReadOnly = false;
+  };
+  defaults = {
+    imports = [ ];
+    nixpkgs.overlays = [
+    ];
+  };
 }
