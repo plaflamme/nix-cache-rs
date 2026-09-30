@@ -4,11 +4,9 @@ A nix binary cache backed by Cloudflare Workers and R2.
 
 ## Introduction
 
-Cachix provides nix binary caches for free (up to 5GB of storage), but the cache will be publicly available.
-
-This project allows you to host a (mostly) cachix-compatible binary cache for almost nothing by relying on Cloudflare's generous free tier.
-Common use-cases for this project are personal nixos configurations that you'd like to keep private.
-It is not designed for very large binary caches.
+This project allows you to host a (mostly) cachix-compatible binary cache at low cost by relying on Cloudflare's generous free tier.
+Typical use-case for this project is hosting binaries for personal nixos configurations that you'd like to keep private.
+It is not designed for large binary caches. Consider using [Cachix](https://www.cachix.org/) for anything else.
 
 The project relies on only 2 Cloudflare products: Workers (compute) and R2 (S3-compatible storage).
 
@@ -19,79 +17,60 @@ The free tier gives you:
 * 1M class-A operations (mostly write operations)
 * 10M class-B operations (mostly read operations)
 
-Depending on your usage, you are likely to only pay for storage which is $0.015 / GB-month above the 10GB mark.
-So a 50GB cache (the entrylevel cachix plan) would cost you US$2 per month.
+Depending on your usage, you are likely to only pay for storage which is US$0.015 / GB-month above the 10GB mark.
+So a cache holding 50GB of binaries for a month would cost you US$0.60.
 
 Refer to Cloudflare's [pricing for more details](https://www.cloudflare.com/plans/) and use their [R2 calculator](https://r2-calculator.cloudflare.com/) to estimate your own costs.
 
-NOTE: the author and this project are not responsible for the user's Cloudflare fees.
-Using this will likely cause you to incur Cloudflare fees, these are your own responsbility.
-This project makes no guarantees. Use at your own risks.
+⚠️ **Cloudflare Cost Disclaimer** ⚠️
+
+This tool relies on paid cloud infrastructure resources provided by Cloudflare.
+You are solely responsible for any fees, bills, or charges incurred by running this project.
+The authors and contributors are not responsible for any unexpected expenses.
 
 ## Getting Started
 
 ### Pre-requisites
 
-You'll need a cloudflare acount. You can crate one [here](https://www.cloudflare.com/sign-up).
+You'll need a Cloudflare account, if you don't already have one, you can create one [here](https://www.cloudflare.com/sign-up).
 
-1. Install [`wrangler`](https://developers.cloudflare.com/workers/wrangler/install-and-update/).
-
-2. Login to Cloudflare
+Once available, login to the account using the provided cli:
 
 ```
-wrangler login
+nix run github:plaflamme/nix-cache-rs -- login
 ```
 
-3. Create an R2 bucket
+This will execute an OAuth dance to allow using the `wrangler` command line locally.
 
-We'll name the bucket `nix-cache`, but you can use a different name. We'll need to refer to this later on.
+### Provision
 
-```
-wrangler r2 bucket create nix-cache
-```
-
-4. Set object lifecycle (recommended)
-
-This step is optional, but is recommended to have evict cached binaries after a certain time.
-Without this, the cahe will grow unbounded.
+Use the script provided to provision the required R2 bucket and worker
 
 ```
-wrangler r2 bucket lifecycle add nix-cache cache-eviction --expire-days 30 --abort-multipart-days 1
+nix run github:plaflamme/nix-cache-rs -- provision -w nix-cache-worker -b nix-cache-bucket
 ```
 
-This policy will automatically delete cached files after 30 days.
-It will also automatically unfinished multipart uploads (used by the cachix client) after 1 day.
+The authentication token and the public signing key will be printed on the console, these are required to actually use the cache.
+See the sections below to learn where to place these values.
 
-5. Create `wrangler.toml`
+### Deploy
 
-TODO
-
-  * variables
-      * `bucket_name`
-  * secrets: `["R2_ENDPOINT", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "AUTH_TOKEN", "SIGNING_PUBLIC_KEY", "SIGNING_PRIVATE_KEY"]`
-  * bucket binding
-
-6. Create Secrets in `.env`
-
-TODO
-
-  * `R2_ACCESS_KEY_ID`
-  * `R2_SECRET_ACCESS_KEY`
-  * `R2_ENDPOINT`
-  * `AUTH_TOKEN`
-  * `SIGNING_PUBLIC_KEY`
-  * `SINGNING_PRIVATE_KEY`
-
-7. Deploy!
+Once provisioning is complete, you may deploy the latest worker code with the following command:
 
 ```
-wrangler deploy --secrets-file .env`
+nix run github:plaflamme/nix-cache-rs -- deploy -w nix-cache-worker -b nix-cache-bucket
 ```
 
-8. Confirm it is working
+This will print the `workers.dev` url you may use to invoke the worker.
+
+Updating the worker can be done using the same command.
+
+### Test
+
+To confirm the setup is complete
 
 ```
-set -a && source .env && curl https://:${AUTH_TOKEN}@worker-url.dev/nix-cache-info
+curl https://:${AUTH_TOKEN}@nix-cache-rs-worker.foo-bar.workers.dev/nix-cache-info
 ```
 
 ## using `cachix`
@@ -101,7 +80,7 @@ set -a && source .env && curl https://:${AUTH_TOKEN}@worker-url.dev/nix-cache-in
 Cachix supports multiple caches, but this project only supports a single one, so use `default` as its name.
 
 ```
-set -a && source .env && CACHIX_AUTH_TOKEN=${AUTH_TOKEN} cachix --hostname=https://worker-url.dev push default $(nix path-info nixpkgs#hello)
+CACHIX_AUTH_TOKEN=${AUTH_TOKEN} cachix --hostname=https://nix-cache-rs-worker.foo-bar.workers.dev push default $(nix path-info nixpkgs#hello)
 ```
 
 ### In Github Actions
@@ -137,18 +116,55 @@ jobs:
       - run: nix flake check
 ```
 
-## using with nix
+## dependabot
+
+If you are using Dependabot, the secrets will also have to be stored under `Secrets & Variables / Dependabot` to make them visible to workflows ran from PRs it opens.
+
+Alternatively, you may use `on: pull_request_target` instead of `pull_request`.
+
+## using with NixOS
 
 Create a `/etc/nix/netrc` file with the following contents:
 
 ```
-machine <cache_hostname>
+machine <worker_hostname>
   login ""
   password <auth_token>
 ```
 
-## dependabot
+Add the cache as a substituter to your nix settings:
 
-Put the auth token in both Secrets & Variables / Actions and Secrets & Variables / Dependabot
+```
+{ ... }: {
+  nix = {
+    settings = {
+      extra-substituters = [
+        "https://nix-cache-rs-worker.foo-bar.workers.dev"
+      ];
+      extra-trusted-public-keys = [
+        "nix-cache-rs-worker-1:NnFFOMVXxfXu7hA/WiSPk+6Dt3KOnqqD0Y1vWZgWP2s="
+      ];
+    };
+  }
+}
+```
 
-Or use `pull_request_target`
+Similarly in your `flake.nix`:
+
+```
+{
+  nixConfig = {
+    extra-substituters = [
+        "https://nix-cache-rs-worker.foo-bar.workers.dev"
+    ];
+    extra-trusted-public-keys = [
+      "nix-cache-rs-worker-1:NnFFOMVXxfXu7hA/WiSPk+6Dt3KOnqqD0Y1vWZgWP2s="
+    ];
+  };
+
+  inputs = {
+    ...
+  };
+}
+
+```

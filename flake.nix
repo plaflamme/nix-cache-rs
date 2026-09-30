@@ -41,7 +41,6 @@
                 };
                 rustToolchain = localPkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
                 craneLib = (crane.mkLib localPkgs).overrideToolchain rustToolchain;
-                wasm-bindgen-cli = pkgs.wasm-bindgen-cli_0_2_127;
 
                 src = pkgs.lib.fileset.toSource {
                   root = ./.;
@@ -51,10 +50,12 @@
                     ./tests
                   ];
                 };
+                nix-cache-rs = self'.packages.worker;
               in
               {
-                default = craneLib.buildPackage {
+                worker = craneLib.buildPackage {
                   inherit src;
+
                   cargoArtifacts = craneLib.buildDepsOnly {
                     inherit src;
                     CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
@@ -64,14 +65,14 @@
 
                   nativeBuildInputs = [
                     pkgs.worker-build
-                    wasm-bindgen-cli
+                    pkgs.wasm-bindgen-cli
                     pkgs.binaryen
                     pkgs.esbuild
                   ];
 
                   HOME = "\$TMPDIR";
                   CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
-                  WASM_BINDGEN_BIN = "${wasm-bindgen-cli}/bin/wasm-bindgen";
+                  WASM_BINDGEN_BIN = "${pkgs.wasm-bindgen-cli}/bin/wasm-bindgen";
                   WASM_OPT_BIN = "${pkgs.binaryen}/bin/wasm-opt";
                   ESBUILD_BIN = "${pkgs.esbuild}/bin/esbuild";
 
@@ -82,10 +83,12 @@
                     cp -r build/* $out/
                   '';
                 };
+                default = import ./nix/cli.nix { inherit pkgs nix-cache-rs; };
               };
+
             checks =
               let
-                nix-cache-rs = self'.packages.default;
+                nix-cache-rs = self'.packages.worker;
               in
               {
                 simple = import ./nix/checks/simple.nix { inherit pkgs nix-cache-rs; };
