@@ -26,6 +26,10 @@ jobs:
           nix_path: nixpkgs=channel:nixos-unstable
           extra_nix_config: |
             experimental-features = nix-command flakes
+      - uses: cachix/cachix-action@v17
+        with:
+          name: nix-cache-rs
+          authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
       - run: nix build
       - run: |
           checks=$(nix flake show --json | jq -r '.checks."${{ matrix.system }}" | keys? | .[]')
