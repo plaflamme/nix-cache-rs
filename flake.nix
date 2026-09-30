@@ -2,9 +2,21 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     flake-parts.url = "github:hercules-ci/flake-parts";
+    crane.url = "github:ipetkov/crane";
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
   outputs =
-    { flake-parts, ... }@inputs:
+    {
+      self,
+      nixpkgs,
+      flake-parts,
+      rust-overlay,
+      crane,
+      ...
+    }@inputs:
     flake-parts.lib.mkFlake { inherit inputs; } (
       { ... }: {
         imports = [
@@ -14,43 +26,107 @@
           "aarch64-darwin"
         ];
         perSystem =
-          { pkgs, ... }:
-          let
-            cachix-proxied = pkgs.writeShellScriptBin "cachix-proxied" ''
-              export http_proxy="http://127.0.0.1:8080"
-              export https_proxy="http://127.0.0.1:8080"
-              export SSL_CERT_FILE="$HOME/.mitmproxy/mitmproxy-ca-cert.pem"
-              exec ${pkgs.cachix}/bin/cachix "$@"
-            '';
-
-            mock-auth-token = "mock-auth-token";
-          in
           {
-            devShells = {
-              default = pkgs.mkShell {
-                nativeBuildInputs = [
-                  pkgs.wrangler
-                  pkgs.worker-build
-                  cachix-proxied
-                  pkgs.cachix
-                  pkgs.mitmproxy
-                ];
+            self',
+            pkgs,
+            system,
+            ...
+          }:
+          {
+            packages =
+              let
+                localPkgs = import nixpkgs {
+                  inherit system;
+                  overlays = [ (import rust-overlay) ];
+                };
+                rustToolchain = localPkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
+                craneLib = (crane.mkLib localPkgs).overrideToolchain rustToolchain;
+                wasm-bindgen-cli = pkgs.wasm-bindgen-cli_0_2_127;
 
-                MOCK_AUTH_TOKEN = "${mock-auth-token}";
+                src = pkgs.lib.fileset.toSource {
+                  root = ./.;
+                  fileset = pkgs.lib.fileset.unions [
+                    (craneLib.fileset.commonCargoSources ./.)
+                    # keep all files under ./tests
+                    ./tests
+                  ];
+                };
+              in
+              {
+                default = craneLib.buildPackage {
+                  inherit src;
+                  cargoArtifacts = craneLib.buildDepsOnly {
+                    inherit src;
+                    CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
+                  };
 
-                shellHook = ''
-                  TARGET_FILE=".env.local"
-                  cat << EOF > "$TARGET_FILE"
-                  # auto-generated, see flake.nix
-                  AUTH_TOKEN=${mock-auth-token}
-                  R2_ACCESS_KEY_ID=mock-local-key
-                  R2_SECRET_ACCESS_KEY=mock-local-secret
-                  R2_ENDPOINT=http://localhost:8787/cdn-cgi/local/r2/s3
-                  SIGNING_PUBLIC_KEY=''$(cat tests/cache.example.com-1.pk)
-                  SIGNING_PRIVATE_KEY=''$(cat tests/cache.example.com-1.sk)
-                  EOF
-                '';
+                  doCheck = false;
+
+                  nativeBuildInputs = [
+                    pkgs.worker-build
+                    wasm-bindgen-cli
+                    pkgs.binaryen
+                    pkgs.esbuild
+                  ];
+
+                  HOME = "\$TMPDIR";
+                  CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
+                  WASM_BINDGEN_BIN = "${wasm-bindgen-cli}/bin/wasm-bindgen";
+                  WASM_OPT_BIN = "${pkgs.binaryen}/bin/wasm-opt";
+                  ESBUILD_BIN = "${pkgs.esbuild}/bin/esbuild";
+
+                  cargoBuildCommand = "worker-build --release";
+
+                  installPhase = ''
+                    mkdir -p $out
+                    cp -r build/* $out/
+                  '';
+                };
               };
+            checks =
+              let
+                nix-cache-rs = self'.packages.default;
+              in
+              {
+                simple = import ./nix/checks/simple.nix { inherit pkgs nix-cache-rs; };
+              };
+
+            devShells = {
+              default =
+                let
+                  cachix-proxied = pkgs.writeShellScriptBin "cachix-proxied" ''
+                    export http_proxy="http://127.0.0.1:8080"
+                    export https_proxy="http://127.0.0.1:8080"
+                    export SSL_CERT_FILE="$HOME/.mitmproxy/mitmproxy-ca-cert.pem"
+                    exec ${pkgs.cachix}/bin/cachix "$@"
+                  '';
+
+                  mock-auth-token = "mock-auth-token";
+                in
+                pkgs.mkShell {
+                  nativeBuildInputs = [
+                    pkgs.wrangler
+                    pkgs.worker-build
+                    cachix-proxied
+                    pkgs.cachix
+                    pkgs.mitmproxy
+                  ];
+
+                  MOCK_AUTH_TOKEN = "${mock-auth-token}";
+
+                  shellHook = ''
+                    TARGET_FILE=".env.local"
+                    cat << EOF > "$TARGET_FILE"
+                    # auto-generated, see flake.nix
+                    AUTH_TOKEN=${mock-auth-token}
+                    R2_ACCESS_KEY_ID=mock-local-key
+                    R2_SECRET_ACCESS_KEY=mock-local-secret
+                    R2_ENDPOINT=http://localhost:8787/cdn-cgi/local/r2/s3
+                    SIGNING_PUBLIC_KEY=''$(cat tests/cache.example.com-1.pk)
+                    SIGNING_PRIVATE_KEY=''$(cat tests/cache.example.com-1.sk)
+                    EOF
+                  '';
+                };
             };
           };
       }
