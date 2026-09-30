@@ -132,7 +132,7 @@ pkgs.writeShellApplication {
       echo ""
       echo "Run the following command to finalize the configuration and obtain the cache's URL."
       echo ""
-      echo "deploy -w $WORKER_NAME -b $BUCKET_NAME
+      echo "deploy -w $WORKER_NAME -b $BUCKET_NAME"
     }
 
     deploy() {
@@ -146,7 +146,7 @@ pkgs.writeShellApplication {
               h)
                 echo "Usage: nix-cache-rs deploy [-w <worker name>] [-b <bucket name>] [-h]"
                 echo ""
-                echo "Deploy (or update) the worker."
+                echo "Deploy or update the worker."
                 exit 1
                 ;;
               *) exit 1 ;;

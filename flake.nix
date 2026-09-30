@@ -31,6 +31,7 @@
             self',
             pkgs,
             system,
+            lib,
             ...
           }:
           {
@@ -91,7 +92,8 @@
               let
                 nix-cache-rs = self'.packages.worker;
               in
-              {
+              { }
+              // lib.optionalAttrs (system == "x86_64-linux") {
                 simple = import ./nix/checks/simple.nix { inherit pkgs nix-cache-rs; };
               };
 

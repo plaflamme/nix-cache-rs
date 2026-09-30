@@ -26,6 +26,7 @@ jobs:
           nix_path: nixpkgs=channel:nixos-unstable
           extra_nix_config: |
             experimental-features = nix-command flakes
+      - run: nix build
       - run: |
           checks=$(nix flake show --json | jq -r '.checks."${{ matrix.system }}" | keys | .[]')
           for check in $checks;
