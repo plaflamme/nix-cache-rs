@@ -1,0 +1,18 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    groups:
+      gha:
+        patterns: ["*"]
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "nix"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 0
+    groups:
+      flake-inputs:
+        patterns: ["*"]
