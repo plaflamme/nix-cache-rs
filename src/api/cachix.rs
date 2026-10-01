@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use crate::Compression;
 use crate::NixCacheApp;
-use crate::cache_info;
+use super::{cache_info, narfile_key, narinfo_key, store_hash};
 
 use axum::extract::OriginalUri;
 use axum::extract::Path;
@@ -17,17 +17,6 @@ use uuid::Uuid;
 use worker::HttpMetadata;
 use worker::UploadedPart;
 
-pub fn narfile_key(cache_name: &str, nar_hash: &str, compression: Compression) -> String {
-    format!("{cache_name}/nar/{nar_hash}.nar{}", compression.extension())
-}
-
-pub fn narinfo_key(cache_name: &str, store_hash: &str) -> String {
-    format!("{cache_name}/narinfo/{store_hash}")
-}
-
-pub fn store_hash(narinfo_key: &str) -> Option<&str> {
-    narinfo_key.split('/').next_back()
-}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]

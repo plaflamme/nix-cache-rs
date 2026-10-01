@@ -17,7 +17,7 @@ use harmonia_store_path::{FromStoreDirStr, StoreDir, StorePath};
 use harmonia_store_path_info::{NarHash, UnkeyedValidPathInfo, fingerprint_path};
 use harmonia_utils_hash::fmt::Any;
 
-use crate::{Compression, cachix::NarInfoCreate};
+use crate::{Compression, api::NarInfoCreate};
 
 /// Validation/rendering errors for [`render_narinfo`].
 ///

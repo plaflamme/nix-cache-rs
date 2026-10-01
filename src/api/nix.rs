@@ -1,3 +1,6 @@
+/// Nix bianry cache endpoints.
+///
+/// See https://fzakaria.github.io/nix-http-binary-cache-api-spec/
 use std::str::FromStr;
 
 use axum::{
@@ -10,12 +13,8 @@ use harmonia_utils_hash::fmt::Base32;
 use http::StatusCode;
 use worker::HttpMetadata;
 
-use crate::{
-    Compression, NixCacheApp,
-    cachix::{narfile_key, narinfo_key},
-    extract::Method,
-    r2_sig,
-};
+use super::{narfile_key, narinfo_key};
+use crate::{Compression, NixCacheApp, api::extract::Method, r2_sig};
 
 #[worker::send]
 #[axum_macros::debug_handler]
