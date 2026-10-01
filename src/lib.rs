@@ -1,8 +1,7 @@
 //! # nix-cache-rs
-#![feature(trim_prefix_suffix)]
 
-mod app;
 mod api;
+mod app;
 mod compression;
 mod error;
 mod narinfo;
@@ -17,7 +16,6 @@ pub use error::Error;
 use tower_service::Service;
 
 use worker::{Context, Env, HttpRequest};
-
 
 #[worker::event(fetch)]
 pub async fn fetch(
