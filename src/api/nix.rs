@@ -14,7 +14,11 @@ use http::StatusCode;
 use worker::HttpMetadata;
 
 use super::{narfile_key, narinfo_key};
-use crate::{Compression, NixCacheApp, api::extract::Method, r2_sig};
+use crate::{
+    Compression, NixCacheApp,
+    api::{DEFAULT_CACHE_NAME, extract::Method},
+    r2_sig,
+};
 
 #[worker::send]
 #[axum_macros::debug_handler]
@@ -24,7 +28,7 @@ async fn get_narinfo(
     Method(method): Method,
 ) -> Result<axum::response::Response, crate::Error> {
     let bucket = app.bucket;
-    let cache_name = "default"; // TODO: extract from worker URI
+    let cache_name = DEFAULT_CACHE_NAME;
     let object = bucket
         .get(narinfo_key(cache_name, &store_hash))
         .execute()
@@ -83,8 +87,8 @@ async fn put_narinfo(
                 .unwrap_or(Ok(Compression::None))?;
 
             let narfile_hash = Base32::from_hash(nar_hash).bare().to_string();
-            let narfile_key = narfile_key("default", &narfile_hash, compression);
-            let nar_url = narfile_key.trim_prefix("default/"); // TODO: this is stupid
+            let narfile_key = narfile_key(DEFAULT_CACHE_NAME, &narfile_hash, compression);
+            let nar_url = narfile_key.trim_prefix(DEFAULT_CACHE_NAME).trim_prefix("/"); // TODO: this is stupid
 
             let narinfo_url = narinfo.info.url.ok_or(crate::Error::Validation {
                 field: "URL",
@@ -119,7 +123,7 @@ async fn put_narinfo(
         }
 
         bucket
-            .put(narinfo_key("default", store_hash), narinfo_txt)
+            .put(narinfo_key(DEFAULT_CACHE_NAME, store_hash), narinfo_txt)
             .http_metadata(HttpMetadata {
                 content_type: Some("text/x-nix-narinfo".to_string()),
                 ..Default::default()
@@ -163,7 +167,7 @@ async fn get_nar(
             .path_segments_mut()
             .expect("url can be base")
             .push(&app.bucket_name)
-            .extend(narfile_key("default", nar_hash, compression).split('/')); // TODO: cache name from hostname
+            .extend(narfile_key(DEFAULT_CACHE_NAME, nar_hash, compression).split('/'));
 
         // https://github.com/cachix/cachix/blob/5ecbf73e1e742f527c0d970bef0a4c0d359a5ea7/cachix/src/Cachix/Client/Push/S3.hs#L108-L116
         crate::r2_sig::sign_request(&app, &mut download_url, method, &[])?;
@@ -185,7 +189,7 @@ async fn put_nar(
         .path_segments_mut()
         .expect("url can be base")
         .push(&app.bucket_name)
-        .push("default")
+        .push(DEFAULT_CACHE_NAME)
         .push("nar")
         .push(&narfile);
 

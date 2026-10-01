@@ -7,6 +7,11 @@ mod nix;
 
 pub(crate) use cachix::NarInfoCreate;
 
+// Cachix supports multiple cache names, we don't fully support this currently.
+// The cachix-side is fine, but the nix-side can't select different caches at the moment
+// To support this on the nix-side we either have to require a top-level path (not sure if that's supported) or a different hostname per cache (like cachix does)
+const DEFAULT_CACHE_NAME: &str = "default";
+
 fn narfile_key(cache_name: &str, nar_hash: &str, compression: Compression) -> String {
     format!("{cache_name}/nar/{nar_hash}.nar{}", compression.extension())
 }

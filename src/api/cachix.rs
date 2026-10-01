@@ -1,8 +1,8 @@
 use std::collections::BTreeSet;
 
+use super::{cache_info, narfile_key, narinfo_key, store_hash};
 use crate::Compression;
 use crate::NixCacheApp;
-use super::{cache_info, narfile_key, narinfo_key, store_hash};
 
 use axum::extract::OriginalUri;
 use axum::extract::Path;
@@ -16,7 +16,6 @@ use serde::Serialize;
 use uuid::Uuid;
 use worker::HttpMetadata;
 use worker::UploadedPart;
-
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -33,7 +32,7 @@ struct GetCacheResponse {
 async fn get_cache(
     uri: OriginalUri,
     State(app): State<NixCacheApp>,
-    Path(name): Path<String>,
+    Path(cache_name): Path<String>,
 ) -> Result<Json<GetCacheResponse>, crate::Error> {
     let mut uri = url::Url::parse(&uri.to_string()).expect("the original URI is a valid URL");
     uri.path_segments_mut()
@@ -43,7 +42,7 @@ async fn get_cache(
     Ok(Json(GetCacheResponse {
         github_username: "",
         is_public: false,
-        name,
+        name: cache_name,
         permission: "Write".to_string(),
         preferred_compression_method: Compression::Zstd.name().to_ascii_uppercase(),
         public_signing_keys: vec![app.signing_public_key.to_string()],
@@ -106,7 +105,7 @@ struct CompressionParam {
 #[worker::send]
 #[axum_macros::debug_handler]
 async fn create_multipart_upload(
-    Path(name): Path<String>,
+    Path(cache_name): Path<String>,
     State(app): State<NixCacheApp>,
     Query(param): Query<CompressionParam>,
 ) -> Result<Json<CreateMultipartUploadResponse>, crate::Error> {
@@ -118,7 +117,7 @@ async fn create_multipart_upload(
         ..Default::default()
     };
     let multipart_upload = bucket
-        .create_multipart_upload(narfile_key(&name, &nar_id.to_string(), compression))
+        .create_multipart_upload(narfile_key(&cache_name, &nar_id.to_string(), compression))
         .http_metadata(metadata)
         .execute()
         .await?;
@@ -145,7 +144,7 @@ struct RetrievePreSignedUrlResponse {
 
 async fn retrieve_presigned_url(
     State(app): State<NixCacheApp>,
-    Path((name, nar_id)): Path<(String, Uuid)>,
+    Path((cache_name, nar_id)): Path<(String, Uuid)>,
     Query(params): Query<RetrievePreSignedUrlParameters>,
     Json(request): Json<RetrievePreSignedUrlRequest>,
 ) -> Result<Json<RetrievePreSignedUrlResponse>, crate::Error> {
@@ -154,7 +153,7 @@ async fn retrieve_presigned_url(
         .path_segments_mut()
         .expect("url can be base")
         .push(&app.bucket_name)
-        .extend(narfile_key(&name, &nar_id.to_string(), Compression::Zstd).split('/')); // TODO: how do we know what compression is used?
+        .extend(narfile_key(&cache_name, &nar_id.to_string(), Compression::Zstd).split('/')); // TODO: how do we know what compression is used?
     upload_url
         .query_pairs_mut()
         .append_pair("uploadId", &params.upload_id)
@@ -216,13 +215,13 @@ struct CompleteMultipartUploadParameterss {
 #[axum_macros::debug_handler]
 async fn complete_multipart_upload(
     State(app): State<NixCacheApp>,
-    Path((name, nar_id)): Path<(String, Uuid)>,
+    Path((cache_name, nar_id)): Path<(String, Uuid)>,
     Query(params): Query<CompleteMultipartUploadParameterss>,
     Json(request): Json<CompleteMultipartUploadRequest>,
 ) -> Result<StatusCode, crate::Error> {
     let bucket = app.bucket;
     let upload = bucket.resume_multipart_upload(
-        narfile_key(&name, &nar_id.to_string(), Compression::Zstd), // TODO: how do we know what compression is being used?
+        narfile_key(&cache_name, &nar_id.to_string(), Compression::Zstd), // TODO: how do we know what compression is being used?
         params.upload_id,
     );
 
@@ -252,7 +251,7 @@ async fn complete_multipart_upload(
 
     bucket
         .put(
-            narinfo_key(&name, &request.nar_info_create.c_store_hash),
+            narinfo_key(&cache_name, &request.nar_info_create.c_store_hash),
             narinfo_txt,
         )
         .http_metadata(HttpMetadata {
@@ -275,16 +274,19 @@ pub fn router(state: NixCacheApp) -> axum::Router {
     // cachix API
     // https://app.cachix.org/api/v1/
     Router::new()
-        .route("/cache/{name}", get(get_cache))
-        .route("/cache/{name}/nix-cache-info", get(cache_info))
-        .route("/cache/{name}/narinfo", post(missing_narinfo))
-        .route("/cache/{name}/multipart-nar", post(create_multipart_upload))
+        .route("/cache/{cache_name}", get(get_cache))
+        .route("/cache/{cache_name}/nix-cache-info", get(cache_info))
+        .route("/cache/{cache_name}/narinfo", post(missing_narinfo))
         .route(
-            "/cache/{name}/multipart-nar/{nar_id}",
+            "/cache/{cache_name}/multipart-nar",
+            post(create_multipart_upload),
+        )
+        .route(
+            "/cache/{cache_name}/multipart-nar/{nar_id}",
             post(retrieve_presigned_url),
         )
         .route(
-            "/cache/{name}/multipart-nar/{nar_id}/complete",
+            "/cache/{cache_name}/multipart-nar/{nar_id}/complete",
             post(complete_multipart_upload),
         )
         .with_state(state)
