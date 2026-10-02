@@ -1,8 +1,8 @@
-use std::{str::FromStr, sync::Arc};
+use std::str::FromStr;
 
 use harmonia_store_nar_info::NarInfo;
 use harmonia_store_path::StorePathHash;
-use harmonia_utils_hash::fmt::Base32;
+use harmonia_utils_hash::HashFormat;
 use harmonia_utils_signature::SecretKey;
 use worker::{Bucket, HttpMetadata};
 
@@ -33,6 +33,7 @@ impl BucketStore {
         }
     }
 
+    /// Reads the narinfo file for the specified store path hash and appends the store's signature.
     pub async fn get_narinfo(
         &self,
         cache_name: &str,
@@ -58,6 +59,9 @@ impl BucketStore {
         }
     }
 
+    /// Write the specified narinfo data to the store.
+    ///
+    /// Returns an error if any of the fields are invalid or if the nar file referenced by the narinfo doesn't exist.
     pub async fn put_narinfo(
         &self,
         cache_name: &str,
@@ -69,10 +73,10 @@ impl BucketStore {
                 .info
                 .compression
                 .as_deref()
-                .map(|c| Compression::from_str(&c))
+                .map(Compression::from_str)
                 .unwrap_or(Ok(Compression::None))?;
 
-            let narfile_hash = Base32::from_hash(nar_hash).bare().to_string();
+            let narfile_hash = nar_hash.as_base32().bare().to_string();
             let narfile_key = narfile_key(cache_name, &narfile_hash, compression);
             let nar_url = narfile_key.trim_prefix(cache_name).trim_prefix("/"); // TODO: this is stupid
 
