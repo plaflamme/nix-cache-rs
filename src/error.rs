@@ -1,6 +1,7 @@
 use aws_sigv4::{http_request::SigningError, sign::v4::signing_params::BuildError};
 use axum::response::IntoResponse;
 use harmonia_store_nar_info::NarInfoParseError;
+use harmonia_store_path::StorePathError;
 use harmonia_utils_signature::ParseKeyError;
 use thiserror::Error;
 
@@ -22,6 +23,8 @@ pub enum Error {
     NarInfoError(#[from] NarInfoError),
     #[error("Invalid narinfo: {0}")]
     NarInfoParseError(#[from] NarInfoParseError),
+    #[error("Invalid store path or store path hash: {0}")]
+    StorePathError(#[from] StorePathError),
     /// A client-supplied value failed validation. Rendered as HTTP 400.
     #[error("validation error: {field}: {message}")]
     Validation {
@@ -36,6 +39,7 @@ impl IntoResponse for Error {
             Error::Validation { .. } => http::StatusCode::BAD_REQUEST,
             Error::NarInfoError { .. } => http::StatusCode::BAD_REQUEST,
             Error::NarInfoParseError { .. } => http::StatusCode::BAD_REQUEST,
+            Error::StorePathError { .. } => http::StatusCode::BAD_REQUEST,
             _ => http::StatusCode::INTERNAL_SERVER_ERROR,
         };
         (status, self.to_string()).into_response()

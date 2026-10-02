@@ -60,7 +60,7 @@ async fn missing_narinfo(
     // But it was chosen to avoid introducing another dependency, like KVStore or D1.
     // Using `head` on each key is too slow
 
-    let bucket = app.bucket;
+    let bucket = &app.store.bucket;
     let mut cursor = None;
     while !hashes.is_empty() {
         let list_objects = bucket.list().prefix(narinfo_key(&cache_name, ""));
@@ -110,7 +110,7 @@ async fn create_multipart_upload(
     Query(param): Query<CompressionParam>,
 ) -> Result<Json<CreateMultipartUploadResponse>, crate::Error> {
     let compression = param.compression.unwrap_or(Compression::None);
-    let bucket = app.bucket;
+    let bucket = &app.store.bucket;
     let nar_id = Uuid::new_v4();
     let metadata = HttpMetadata {
         content_type: Some("application/x-nix-nar".to_string()),
@@ -219,7 +219,7 @@ async fn complete_multipart_upload(
     Query(params): Query<CompleteMultipartUploadParameterss>,
     Json(request): Json<CompleteMultipartUploadRequest>,
 ) -> Result<StatusCode, crate::Error> {
-    let bucket = app.bucket;
+    let bucket = &app.store.bucket;
     let upload = bucket.resume_multipart_upload(
         narfile_key(&cache_name, &nar_id.to_string(), Compression::Zstd), // TODO: how do we know what compression is being used?
         params.upload_id,

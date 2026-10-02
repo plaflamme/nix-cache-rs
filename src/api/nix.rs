@@ -9,11 +9,10 @@ use axum::{
     response::IntoResponse,
     routing::{get, put},
 };
-use harmonia_utils_hash::fmt::Base32;
+use harmonia_store_path::StorePathHash;
 use http::StatusCode;
-use worker::HttpMetadata;
 
-use super::{narfile_key, narinfo_key};
+use super::narfile_key;
 use crate::{
     Compression, NixCacheApp,
     api::{DEFAULT_CACHE_NAME, extract::Method},
@@ -27,43 +26,26 @@ async fn get_narinfo(
     Path(store_hash): Path<String>,
     Method(method): Method,
 ) -> Result<axum::response::Response, crate::Error> {
-    let bucket = app.bucket;
-    let cache_name = DEFAULT_CACHE_NAME;
-    let object = bucket
-        .get(narinfo_key(cache_name, &store_hash))
-        .execute()
+    let store_hash = StorePathHash::from_str(&store_hash)?;
+    let narinfo = app
+        .store
+        .get_narinfo(DEFAULT_CACHE_NAME, store_hash)
         .await?;
 
-    let response = match object {
-        None => axum::response::Response::builder()
-            .status(StatusCode::NOT_FOUND)
-            .body(axum::body::Body::empty())?,
-        Some(obj) => {
-            if let Some(body) = obj.body() {
-                // NOTE: we cannot set Content-Length because we add a signature on read
-                // TODO: is the signature length constant? If so, we can know how much more bytes we'll be adding to the object and can compute its resulting size
-                let res = axum::response::Response::builder().status(StatusCode::OK);
-                let res = if let Some(ct) = obj.http_metadata().content_type.as_ref() {
-                    res.header("Content-Type", ct.clone())
-                } else {
-                    res
-                };
-                match method {
-                    http::Method::GET => {
-                        // Sign on read instead of write so we can more easily change keys
-                        let narinfo_txt = body.text().await?;
-                        let mut narinfo = crate::narinfo::parse_narinfo(&narinfo_txt)?;
-                        crate::narinfo::sign_narinfo(&mut narinfo, &app.signing_secret_key);
-                        let narinfo_txt = crate::narinfo::render_narinfo_text(&narinfo);
-                        res.body(axum::body::Body::from(narinfo_txt))?
-                    }
-                    http::Method::HEAD => res.body(axum::body::Body::empty())?,
-                    _ => unreachable!(),
-                }
-            } else {
-                axum::response::Response::builder()
-                    .status(StatusCode::NOT_FOUND)
-                    .body(axum::body::Body::empty())?
+    let response = match narinfo {
+        None => StatusCode::NOT_FOUND.into_response(),
+        Some(narinfo) => {
+            let narinfo_txt = crate::narinfo::render_narinfo_text(&narinfo);
+
+            let res = axum::response::Response::builder()
+                .status(StatusCode::OK)
+                .header("Content-Type", "text/x-nix-narinfo")
+                .header("Content-Length", narinfo_txt.len());
+
+            match method {
+                http::Method::GET => res.body(axum::body::Body::from(narinfo_txt))?,
+                http::Method::HEAD => res.body(axum::body::Body::empty())?,
+                _ => StatusCode::METHOD_NOT_ALLOWED.into_response(),
             }
         }
     };
@@ -73,70 +55,17 @@ async fn get_narinfo(
 #[worker::send]
 async fn put_narinfo(
     State(app): State<NixCacheApp>,
-    Path(store_path): Path<String>,
+    Path(store_path_hash): Path<String>,
     narinfo_txt: String,
 ) -> Result<axum::response::Response, crate::Error> {
-    if let Some((store_hash, "narinfo")) = store_path.split_once('.') {
-        let bucket = app.bucket;
-        let narinfo = crate::narinfo::parse_narinfo(&narinfo_txt)?;
-        if let Some(nar_hash) = narinfo.info.download_hash {
-            let compression = narinfo
-                .info
-                .compression
-                .map(|c| Compression::from_str(&c))
-                .unwrap_or(Ok(Compression::None))?;
-
-            let narfile_hash = Base32::from_hash(nar_hash).bare().to_string();
-            let narfile_key = narfile_key(DEFAULT_CACHE_NAME, &narfile_hash, compression);
-            let nar_url = narfile_key.trim_prefix(DEFAULT_CACHE_NAME).trim_prefix("/"); // TODO: this is stupid
-
-            let narinfo_url = narinfo.info.url.ok_or(crate::Error::Validation {
-                field: "URL",
-                message: "missing URL".to_string(),
-            })?;
-            if narinfo_url != nar_url {
-                return Err(crate::Error::Validation {
-                    field: "URL",
-                    message: format!("expected {nar_url}, got {narinfo_url}"),
-                });
-            }
-
-            let narfile = bucket
-                .head(narfile_key)
-                .await?
-                .ok_or(crate::Error::Validation {
-                    field: "nar",
-                    message: "nar file not in store".to_string(),
-                })?;
-
-            let filesize = narinfo.info.download_size.ok_or(crate::Error::Validation {
-                field: "FileSize",
-                message: "missing".to_string(),
-            })?;
-
-            if narfile.size() != filesize {
-                return Err(crate::Error::Validation {
-                    field: "FileSize",
-                    message: format!("expected {}, got {filesize}", narfile.size()),
-                });
-            }
-        }
-
-        bucket
-            .put(narinfo_key(DEFAULT_CACHE_NAME, store_hash), narinfo_txt)
-            .http_metadata(HttpMetadata {
-                content_type: Some("text/x-nix-narinfo".to_string()),
-                ..Default::default()
-            })
-            .execute()
-            .await?;
-
-        Ok(StatusCode::OK.into_response())
-    } else {
-        Ok(axum::response::Response::builder()
-            .status(StatusCode::BAD_REQUEST)
-            .body(axum::body::Body::empty())?)
+    let narinfo = crate::narinfo::parse_narinfo(&narinfo_txt)?;
+    let store_path_hash = StorePathHash::from_str(&store_path_hash)?;
+    if narinfo.path.hash() != store_path_hash {
+        return Ok(StatusCode::BAD_REQUEST.into_response());
     }
+
+    app.store.put_narinfo(DEFAULT_CACHE_NAME, &narinfo).await?;
+    Ok(StatusCode::OK.into_response())
 }
 
 async fn read(

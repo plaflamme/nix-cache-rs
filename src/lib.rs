@@ -6,6 +6,7 @@ mod compression;
 mod error;
 mod narinfo;
 mod r2_sig;
+mod store;
 mod time;
 
 pub use app::NixCacheApp;
