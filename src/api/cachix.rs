@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use super::{cache_info, narfile_key, narinfo_key, store_hash};
+use super::{cache_info, narinfo_key, store_hash};
 use crate::Compression;
 use crate::NixCacheApp;
 
@@ -14,8 +14,6 @@ use http::StatusCode;
 use serde::Deserialize;
 use serde::Serialize;
 use uuid::Uuid;
-use worker::HttpMetadata;
-use worker::UploadedPart;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -110,18 +108,10 @@ async fn create_multipart_upload(
     Query(param): Query<CompressionParam>,
 ) -> Result<Json<CreateMultipartUploadResponse>, crate::Error> {
     let compression = param.compression.unwrap_or(Compression::None);
-    let bucket = &app.store.bucket;
-    let nar_id = Uuid::new_v4();
-    let metadata = HttpMetadata {
-        content_type: Some("application/x-nix-nar".to_string()),
-        ..Default::default()
-    };
-    let multipart_upload = bucket
-        .create_multipart_upload(narfile_key(&cache_name, &nar_id.to_string(), compression))
-        .http_metadata(metadata)
-        .execute()
+    let (nar_id, upload_id) = app
+        .store
+        .create_nar_upload(&cache_name, compression)
         .await?;
-    let upload_id = multipart_upload.upload_id().await;
     Ok(Json(CreateMultipartUploadResponse { nar_id, upload_id }))
 }
 
@@ -211,55 +201,21 @@ async fn complete_multipart_upload(
     Query(params): Query<CompleteMultipartUploadParameterss>,
     Json(request): Json<CompleteMultipartUploadRequest>,
 ) -> Result<StatusCode, crate::Error> {
-    let bucket = &app.store.bucket;
-    let upload = bucket.resume_multipart_upload(
-        narfile_key(&cache_name, &nar_id.to_string(), Compression::Zstd), // TODO: how do we know what compression is being used?
-        params.upload_id,
-    );
-
-    let upload = match upload {
-        Ok(u) => u,
-        Err(e) => {
-            worker::console_warn!("no such multipart upload: {e}");
-            return Ok(StatusCode::BAD_REQUEST);
-        }
-    };
-
-    let result = upload
-        .complete(request.parts.into_iter().map(|part| {
-            UploadedPart::new(
-                part.part_number,
-                part.e_tag.trim_prefix('"').trim_suffix('"').to_string(),
-            )
-        }))
-        .await;
-
-    let narinfo = crate::narinfo::build_narinfo(
-        &request.nar_info_create,
-        &nar_id,
-        Compression::Zstd, // TODO: how do we know what compression is being used?
-    )?;
-    let narinfo_txt = crate::narinfo::render_narinfo_text(&narinfo);
-
-    bucket
-        .put(
-            narinfo_key(&cache_name, &request.nar_info_create.c_store_hash),
-            narinfo_txt,
+    app.store
+        .complete_nar_upload(
+            &cache_name,
+            nar_id,
+            &params.upload_id,
+            crate::narinfo::build_narinfo(&request.nar_info_create, &nar_id, Compression::Zstd)?,
+            request.parts.into_iter().map(|part| {
+                crate::store::Part(
+                    part.part_number,
+                    part.e_tag.trim_prefix('"').trim_suffix('"').to_string(),
+                )
+            }),
         )
-        .http_metadata(HttpMetadata {
-            content_type: Some("text/x-nix-narinfo".to_string()),
-            ..Default::default()
-        })
-        .execute()
         .await?;
-
-    match result {
-        Ok(_) => Ok(StatusCode::OK),
-        Err(e) => {
-            worker::console_error!("cannot complete: {e}");
-            Ok(StatusCode::INTERNAL_SERVER_ERROR) // TODO: some errors are client errors
-        }
-    }
+    Ok(StatusCode::OK)
 }
 
 pub fn router(state: NixCacheApp) -> axum::Router {

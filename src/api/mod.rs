@@ -1,4 +1,4 @@
-use crate::{Compression, NixCacheApp};
+use crate::NixCacheApp;
 
 mod auth;
 mod cachix;
@@ -11,10 +11,6 @@ pub(crate) use cachix::NarInfoCreate;
 // The cachix-side is fine, but the nix-side can't select different caches at the moment
 // To support this on the nix-side we either have to require a top-level path (not sure if that's supported) or a different hostname per cache (like cachix does)
 const DEFAULT_CACHE_NAME: &str = "default";
-
-fn narfile_key(cache_name: &str, nar_hash: &str, compression: Compression) -> String {
-    format!("{cache_name}/nar/{nar_hash}.nar{}", compression.extension())
-}
 
 fn narinfo_key(cache_name: &str, store_hash: &str) -> String {
     format!("{cache_name}/narinfo/{store_hash}")

@@ -22,6 +22,13 @@ fn store_hash(narinfo_key: &str) -> Option<&str> {
     narinfo_key.split('/').next_back()
 }
 
+pub struct Part(pub u16, pub String);
+impl From<Part> for worker::UploadedPart {
+    fn from(value: Part) -> Self {
+        Self::new(value.0, value.1)
+    }
+}
+
 pub struct BucketStore {
     pub bucket: Bucket,
     bucket_name: String,
@@ -142,6 +149,79 @@ impl BucketStore {
             .put(
                 narinfo_key(cache_name, &store_path.hash().to_string()),
                 crate::narinfo::render_narinfo_text(narinfo),
+            )
+            .http_metadata(HttpMetadata {
+                content_type: Some("text/x-nix-narinfo".to_string()),
+                ..Default::default()
+            })
+            .execute()
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn create_nar_upload(
+        &self,
+        cache_name: &str,
+        compression: Compression,
+    ) -> Result<(uuid::Uuid, String), crate::Error> {
+        let bucket = &self.bucket;
+        let nar_id = uuid::Uuid::new_v4();
+        let metadata = HttpMetadata {
+            content_type: Some("application/x-nix-nar".to_string()),
+            ..Default::default()
+        };
+        let multipart_upload = bucket
+            .create_multipart_upload(narfile_key(cache_name, &nar_id.to_string(), compression))
+            .http_metadata(metadata)
+            .execute()
+            .await?;
+        let upload_id = multipart_upload.upload_id().await;
+        Ok((nar_id, upload_id))
+    }
+
+    pub(crate) async fn complete_nar_upload(
+        &self,
+        cache_name: &str,
+        nar_id: uuid::Uuid,
+        upload_id: &str,
+        nar_info: NarInfo,
+        parts: impl IntoIterator<Item = Part>,
+    ) -> Result<(), crate::Error> {
+        let bucket = &self.bucket;
+        let upload = bucket.resume_multipart_upload(
+            narfile_key(cache_name, &nar_id.to_string(), Compression::Zstd), // TODO: how do we know what compression is being used?
+            upload_id,
+        );
+
+        let upload = match upload {
+            Ok(u) => u,
+            Err(e) => {
+                return Err(crate::Error::Validation {
+                    field: "uploadId",
+                    message: format!("cannot resume upload {e}"),
+                });
+            }
+        };
+
+        let _object = match upload.complete(parts.into_iter().map(Into::into)).await {
+            Ok(object) => object,
+            Err(e) => {
+                return Err(crate::Error::Validation {
+                    field: "parts",
+                    message: format!("cannot complete upload {e}"),
+                });
+            }
+        };
+
+        // TODO: validate narinfo matches _object
+
+        let narinfo_txt = crate::narinfo::render_narinfo_text(&nar_info);
+
+        bucket
+            .put(
+                narinfo_key(cache_name, &nar_info.path.hash().to_string()),
+                narinfo_txt,
             )
             .http_metadata(HttpMetadata {
                 content_type: Some("text/x-nix-narinfo".to_string()),
