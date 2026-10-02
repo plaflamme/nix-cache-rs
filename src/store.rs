@@ -68,50 +68,60 @@ impl BucketStore {
         narinfo: &NarInfo,
     ) -> Result<(), crate::Error> {
         let store_path = &narinfo.path;
-        if let Some(nar_hash) = narinfo.info.download_hash {
-            let compression = narinfo
-                .info
-                .compression
-                .as_deref()
-                .map(Compression::from_str)
-                .unwrap_or(Ok(Compression::None))?;
 
-            let narfile_hash = nar_hash.as_base32().bare().to_string();
-            let narfile_key = narfile_key(cache_name, &narfile_hash, compression);
-            let nar_url = narfile_key.trim_prefix(cache_name).trim_prefix("/"); // TODO: this is stupid
+        // The hash of the actual file that will be downloaded.
+        // This may differ from the nar's hash when the nar is compressed for example.
+        let file_hash = narinfo
+            .info
+            .download_hash
+            .unwrap_or_else(|| narinfo.info.info.nar_hash.into());
 
-            let narinfo_url = narinfo.info.url.clone().ok_or(crate::Error::Validation {
+        let compression = narinfo
+            .info
+            .compression
+            .as_deref()
+            .map(Compression::from_str)
+            .unwrap_or(Ok(Compression::None))?;
+
+        let narfile_key = narfile_key(
+            cache_name,
+            &file_hash.as_base32().bare().to_string(),
+            compression,
+        );
+
+        let nar_url = narfile_key.trim_prefix(cache_name).trim_prefix("/"); // TODO: this is stupid
+
+        let narinfo_url = narinfo.info.url.clone().ok_or(crate::Error::Validation {
+            field: "URL",
+            message: "missing URL".to_string(),
+        })?;
+
+        if narinfo_url != nar_url {
+            return Err(crate::Error::Validation {
                 field: "URL",
-                message: "missing URL".to_string(),
+                message: format!("expected {nar_url}, got {narinfo_url}"),
+            });
+        }
+
+        let narfile = self
+            .bucket
+            .head(narfile_key)
+            .await?
+            .ok_or(crate::Error::Validation {
+                field: "nar",
+                message: "nar file not in store".to_string(),
             })?;
 
-            if narinfo_url != nar_url {
-                return Err(crate::Error::Validation {
-                    field: "URL",
-                    message: format!("expected {nar_url}, got {narinfo_url}"),
-                });
-            }
+        let filesize = narinfo
+            .info
+            .download_size
+            .unwrap_or(narinfo.info.info.nar_size);
 
-            let narfile = self
-                .bucket
-                .head(narfile_key)
-                .await?
-                .ok_or(crate::Error::Validation {
-                    field: "nar",
-                    message: "nar file not in store".to_string(),
-                })?;
-
-            let filesize = narinfo.info.download_size.ok_or(crate::Error::Validation {
+        if narfile.size() != filesize {
+            return Err(crate::Error::Validation {
                 field: "FileSize",
-                message: "missing".to_string(),
-            })?;
-
-            if narfile.size() != filesize {
-                return Err(crate::Error::Validation {
-                    field: "FileSize",
-                    message: format!("expected {}, got {filesize}", narfile.size()),
-                });
-            }
+                message: format!("expected {}, got {filesize}", narfile.size()),
+            });
         }
 
         self.bucket
