@@ -148,23 +148,15 @@ async fn retrieve_presigned_url(
     Query(params): Query<RetrievePreSignedUrlParameters>,
     Json(request): Json<RetrievePreSignedUrlRequest>,
 ) -> Result<Json<RetrievePreSignedUrlResponse>, crate::Error> {
-    let mut upload_url = app.r2_endpoint.clone();
-    upload_url
-        .path_segments_mut()
-        .expect("url can be base")
-        .push(&app.bucket_name)
-        .extend(narfile_key(&cache_name, &nar_id.to_string(), Compression::Zstd).split('/')); // TODO: how do we know what compression is used?
-    upload_url
-        .query_pairs_mut()
-        .append_pair("uploadId", &params.upload_id)
-        .append_pair("partNumber", &params.part_number.to_string())
-        .finish();
-
-    // https://github.com/cachix/cachix/blob/5ecbf73e1e742f527c0d970bef0a4c0d359a5ea7/cachix/src/Cachix/Client/Push/S3.hs#L108-L116
-    crate::r2_sig::sign_request(
-        &app,
-        &mut upload_url,
+    let upload_url = app.store.presigned_nar_url(
+        &cache_name,
+        &nar_id.to_string(),
+        Compression::Zstd,
         http::Method::PUT,
+        &[
+            ("uploadId", &params.upload_id),
+            ("partNumber", &params.part_number.to_string()),
+        ],
         &[
             ("Content-Type", "application/octet-stream"),
             ("Content-MD5", request.content_md5.as_str()),

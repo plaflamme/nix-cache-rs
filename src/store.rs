@@ -4,6 +4,8 @@ use harmonia_store_nar_info::NarInfo;
 use harmonia_store_path::StorePathHash;
 use harmonia_utils_hash::HashFormat;
 use harmonia_utils_signature::SecretKey;
+use http::Method;
+use url::Url;
 use worker::{Bucket, HttpMetadata};
 
 use crate::Compression;
@@ -22,13 +24,25 @@ fn store_hash(narinfo_key: &str) -> Option<&str> {
 
 pub struct BucketStore {
     pub bucket: Bucket,
+    bucket_name: String,
+    credentials: aws_credential_types::Credentials,
+    r2_endpoint: Url,
     signing_secret_key: SecretKey,
 }
 
 impl BucketStore {
-    pub fn new(bucket: Bucket, signing_secret_key: SecretKey) -> Self {
+    pub fn new(
+        bucket: Bucket,
+        bucket_name: String,
+        credentials: aws_credential_types::Credentials,
+        r2_endpoint: Url,
+        signing_secret_key: SecretKey,
+    ) -> Self {
         Self {
             bucket,
+            bucket_name,
+            credentials,
+            r2_endpoint,
             signing_secret_key,
         }
     }
@@ -137,5 +151,31 @@ impl BucketStore {
             .await?;
 
         Ok(())
+    }
+
+    pub fn presigned_nar_url(
+        &self,
+        cache_name: &str,
+        nar_id: &str,
+        compression: Compression,
+        method: Method,
+        query_params: &[(&str, &str)],
+        headers: &[(&str, &str)],
+    ) -> Result<Url, crate::Error> {
+        let mut narfile_url = self.r2_endpoint.clone();
+        narfile_url
+            .path_segments_mut()
+            .expect("url can be base")
+            .push(&self.bucket_name)
+            .extend(narfile_key(cache_name, nar_id, compression).split('/'));
+        query_params
+            .iter()
+            .fold(&mut narfile_url.query_pairs_mut(), |qp, (key, value)| {
+                qp.append_pair(key, value)
+            })
+            .finish();
+        // https://github.com/cachix/cachix/blob/5ecbf73e1e742f527c0d970bef0a4c0d359a5ea7/cachix/src/Cachix/Client/Push/S3.hs#L108-L116
+        crate::r2_sig::sign_request(self.credentials.clone(), &mut narfile_url, method, headers)?;
+        Ok(narfile_url)
     }
 }

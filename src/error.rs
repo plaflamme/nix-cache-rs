@@ -5,8 +5,6 @@ use harmonia_store_path::StorePathError;
 use harmonia_utils_signature::ParseKeyError;
 use thiserror::Error;
 
-use crate::narinfo::NarInfoError;
-
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("CF worker error: {0}")]
@@ -17,14 +15,15 @@ pub enum Error {
     SiningError(#[from] SigningError),
     #[error("Failed to parse signing key: {0}")]
     ParseKeyError(#[from] ParseKeyError),
+    #[error("Failed to parse hash: {0}")]
+    ParseHashError(#[from] harmonia_utils_hash::fmt::ParseHashError),
     #[error("Http error: {0}")]
     HttpError(#[from] http::Error),
-    #[error("Invalid narinfo: {0}")]
-    NarInfoError(#[from] NarInfoError),
     #[error("Invalid narinfo: {0}")]
     NarInfoParseError(#[from] NarInfoParseError),
     #[error("Invalid store path or store path hash: {0}")]
     StorePathError(#[from] StorePathError),
+
     /// A client-supplied value failed validation. Rendered as HTTP 400.
     #[error("validation error: {field}: {message}")]
     Validation {
@@ -37,7 +36,6 @@ impl IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
         let status = match &self {
             Error::Validation { .. } => http::StatusCode::BAD_REQUEST,
-            Error::NarInfoError { .. } => http::StatusCode::BAD_REQUEST,
             Error::NarInfoParseError { .. } => http::StatusCode::BAD_REQUEST,
             Error::StorePathError { .. } => http::StatusCode::BAD_REQUEST,
             _ => http::StatusCode::INTERNAL_SERVER_ERROR,

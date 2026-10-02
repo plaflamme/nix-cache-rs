@@ -1,12 +1,3 @@
-//! Pure NarInfo rendering for pushed `NarInfoCreate` payloads.
-//!
-//! [`render_narinfo`] validates the hash and store-path fields of a pushed
-//! [`NarInfoCreate`] and renders the `NarInfo` text that the
-//! `complete_multipart_upload` handler (step 2) stores in R2. It is
-//! deliberately pure: no I/O, no HTTP, no signing. The crate's
-//! `build_narinfo` is intentionally not used because it mints its own `URL`
-//! and signs the info with a key — neither applies to a pushed cache.
-
 use std::{collections::BTreeSet, str::FromStr};
 
 use harmonia_utils_signature::SecretKey;
@@ -19,35 +10,21 @@ use harmonia_utils_hash::fmt::Any;
 
 use crate::{Compression, api::NarInfoCreate};
 
-/// Validation/rendering errors for [`render_narinfo`].
-///
-/// Every variant maps to an HTTP 400 once wired into a handler (step 2).
-#[derive(Debug, thiserror::Error)]
-pub enum NarInfoError {
-    #[error("invalid {field}: {value} ({message})")]
-    Invalid {
-        field: &'static str,
-        value: String,
-        message: String,
-    },
-}
-
 /// Renders the pushed [`NarInfoCreate`] as `NarInfo` text.
 /// This will also sign the fingerprint and add it as a `Sig` entry of the resulting narinfo.
 pub(crate) fn build_narinfo(
     create: &NarInfoCreate,
     nar_id: &Uuid,
     compression: Compression,
-) -> Result<NarInfo, NarInfoError> {
-    let nar_hash = parse_nar_hash("c_nar_hash", &create.c_nar_hash)?;
-    let file_hash = parse_nar_hash("c_file_hash", &create.c_file_hash)?;
+) -> Result<NarInfo, crate::Error> {
+    let nar_hash = parse_nar_hash_field("c_nar_hash", &create.c_nar_hash)?;
+    let file_hash = parse_nar_hash_field("c_file_hash", &create.c_file_hash)?;
 
     let base = format!("{}-{}", create.c_store_hash, create.c_store_suffix);
     let store_path = base
         .parse::<StorePath>()
-        .map_err(|e| NarInfoError::Invalid {
+        .map_err(|e| crate::Error::Validation {
             field: "store_path",
-            value: base,
             message: e.to_string(),
         })?;
 
@@ -58,9 +35,8 @@ pub(crate) fn build_narinfo(
                 references.insert(path);
             }
             Err(e) => {
-                return Err(NarInfoError::Invalid {
+                return Err(crate::Error::Validation {
                     field: "c_references",
-                    value: reference.clone(),
                     message: e.to_string(),
                 });
             }
@@ -119,17 +95,17 @@ pub(crate) fn parse_narinfo(txt: &str) -> Result<NarInfo, crate::Error> {
     Ok(parse_narinfo_txt(&StoreDir::default(), txt)?)
 }
 
+fn parse_nar_hash_field(field: &'static str, value: &str) -> Result<NarHash, crate::Error> {
+    parse_nar_hash(value).map_err(|e| crate::Error::Validation {
+        field,
+        message: e.to_string(),
+    })
+}
+
 /// Parses a hash field in any of the encodings the client sends:
 /// `sha256:<base32>`, bare base32, or bare hex (see `Any`).
-fn parse_nar_hash(field: &'static str, value: &str) -> Result<NarHash, NarInfoError> {
-    value
-        .parse::<Any<NarHash>>()
-        .map(NarHash::from)
-        .map_err(|e| NarInfoError::Invalid {
-            field,
-            value: value.to_string(),
-            message: e.to_string(),
-        })
+pub fn parse_nar_hash(value: &str) -> Result<NarHash, crate::Error> {
+    Ok(value.parse::<Any<NarHash>>().map(Into::into)?)
 }
 
 #[cfg(test)]
@@ -222,7 +198,7 @@ mod tests {
         create.c_nar_hash = "not-a-nar-hash".to_string();
         let err = build_narinfo(&create, &Uuid::nil(), Compression::Zstd).unwrap_err();
         assert!(
-            matches!(err, NarInfoError::Invalid { .. }),
+            matches!(err, crate::Error::Validation { .. }),
             "unexpected error: {err:?}"
         );
     }
@@ -233,7 +209,7 @@ mod tests {
         create.c_file_hash = "xyz".to_string();
         let err = build_narinfo(&create, &Uuid::nil(), Compression::Zstd).unwrap_err();
         assert!(
-            matches!(err, NarInfoError::Invalid { .. }),
+            matches!(err, crate::Error::Validation { .. }),
             "unexpected error: {err:?}"
         );
     }
@@ -244,7 +220,7 @@ mod tests {
         create.c_store_hash = "!!!not-base32!!!".to_string();
         let err = build_narinfo(&create, &Uuid::nil(), Compression::Zstd).unwrap_err();
         assert!(
-            matches!(err, NarInfoError::Invalid { .. }),
+            matches!(err, crate::Error::Validation { .. }),
             "unexpected error: {err:?}"
         );
     }
@@ -255,7 +231,7 @@ mod tests {
         create.c_references = vec!["not-a-store-path".to_string()];
         let err = build_narinfo(&create, &Uuid::nil(), Compression::Zstd).unwrap_err();
         assert!(
-            matches!(err, NarInfoError::Invalid { .. }),
+            matches!(err, crate::Error::Validation { .. }),
             "unexpected error: {err:?}"
         );
     }
