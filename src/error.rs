@@ -42,6 +42,7 @@ impl IntoResponse for Error {
             Error::StorePathError { .. } => http::StatusCode::BAD_REQUEST,
             _ => http::StatusCode::INTERNAL_SERVER_ERROR,
         };
-        (status, self.to_string()).into_response()
+        worker::console_warn!("{status}: {self}");
+        status.into_response()
     }
 }
