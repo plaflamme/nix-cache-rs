@@ -209,7 +209,7 @@ impl BucketStore {
             }
         };
 
-        let _object = match upload.complete(parts.into_iter().map(Into::into)).await {
+        let object = match upload.complete(parts.into_iter().map(Into::into)).await {
             Ok(object) => object,
             Err(e) => {
                 return Err(crate::Error::Validation {
@@ -219,7 +219,20 @@ impl BucketStore {
             }
         };
 
-        // TODO: validate narinfo matches _object
+        let nar_size = nar_info
+            .info
+            .download_size
+            .unwrap_or(nar_info.info.info.nar_size);
+        if nar_size != object.size() {
+            return Err(crate::Error::Validation {
+                field: "nar_size",
+                message: format!(
+                    "invalid nar_size, expected {}, got {nar_size}",
+                    object.size()
+                ),
+            });
+        }
+
         nar_info.info.url = Some(narfile_url(&nar_id.to_string(), compression));
         let narinfo_txt = crate::narinfo::render_narinfo_text(&nar_info);
 
