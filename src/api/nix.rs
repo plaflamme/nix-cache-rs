@@ -13,8 +13,9 @@ use harmonia_store_path::StorePathHash;
 use http::StatusCode;
 
 use crate::{
-    Compression, NixCacheApp,
+    NixCacheApp,
     api::{DEFAULT_CACHE_NAME, extract::Method},
+    store::NarFilename,
 };
 
 #[worker::send]
@@ -70,22 +71,21 @@ async fn put_narinfo(
 
 async fn presigned_nar_redirect(
     State(app): State<NixCacheApp>,
-    Path(narfile): Path<String>,
+    Path(nar_filename): Path<String>,
     Method(method): Method,
 ) -> Result<axum::response::Response, crate::Error> {
-    if let Some((nar_id, extension)) = narfile.split_once('.')
-        && let Some(("nar", compression)) = extension.split_once('.') // TODO: handle no compression
-        && let Ok(compression) = Compression::from_str(compression)
-    {
-        Ok(axum::response::Redirect::temporary(
-            app.store
-                .presigned_nar_url(DEFAULT_CACHE_NAME, nar_id, compression, method, &[], &[])?
-                .as_str(),
-        )
-        .into_response())
-    } else {
-        Ok(StatusCode::BAD_REQUEST.into_response())
-    }
+    Ok(axum::response::Redirect::temporary(
+        app.store
+            .presigned_nar_url(
+                DEFAULT_CACHE_NAME,
+                NarFilename::from_str(&nar_filename)?,
+                method,
+                &[],
+                &[],
+            )?
+            .as_str(),
+    )
+    .into_response())
 }
 
 pub fn router(state: NixCacheApp) -> axum::Router {
