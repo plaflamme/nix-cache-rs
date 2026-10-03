@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 use super::{cache_info, narinfo_key, store_hash};
 use crate::Compression;
 use crate::NixCacheApp;
+use crate::store::NarFilename;
 
 use axum::extract::OriginalUri;
 use axum::extract::Path;
@@ -61,7 +62,7 @@ async fn missing_narinfo(
     let bucket = &app.store.bucket;
     let mut cursor = None;
     while !hashes.is_empty() {
-        let list_objects = bucket.list().prefix(narinfo_key(&cache_name, ""));
+        let list_objects = bucket.list().prefix(narinfo_key(&cache_name, "narinfo/"));
 
         let objects = match cursor {
             Some(c) => list_objects.cursor(c),
@@ -140,8 +141,7 @@ async fn retrieve_presigned_url(
 ) -> Result<Json<RetrievePreSignedUrlResponse>, crate::Error> {
     let upload_url = app.store.presigned_nar_url(
         &cache_name,
-        &nar_id.to_string(),
-        Compression::Zstd,
+        NarFilename::Uuid(nar_id),
         http::Method::PUT,
         &[
             ("uploadId", &params.upload_id),
@@ -205,9 +205,8 @@ async fn complete_multipart_upload(
     app.store
         .complete_nar_upload(
             &cache_name,
-            nar_id,
+            NarFilename::Uuid(nar_id),
             &params.upload_id,
-            compression,
             crate::narinfo::build_narinfo(&request.nar_info_create, compression)?,
             request.parts.into_iter().map(|part| {
                 crate::store::Part(

@@ -2,6 +2,7 @@ use std::str::FromStr;
 
 use harmonia_store_nar_info::NarInfo;
 use harmonia_store_path::StorePathHash;
+use harmonia_store_path_info::NarHash;
 use harmonia_utils_hash::HashFormat;
 use harmonia_utils_signature::SecretKey;
 use http::Method;
@@ -10,16 +11,80 @@ use worker::{Bucket, HttpMetadata};
 
 use crate::Compression;
 
+/// Two styles for Nar filenames:
+/// * UUID - used by cachix
+/// * NarHash and compression - used by `nix copy`
+///
+/// This is necessary to support both write protocols. Cachix uses multipart uploads and expects a UUID back when it creates it.
+/// Nix, on the other hand, simply GET/PUTs directly to nar filenames under `/nar`.
+///
+/// So we use this to parse and generate nar filenames for either style:
+///
+/// * Uuid: `123e4567-e89b-12d3-a456-426614174000`
+/// * NarHash: `5g20bqhw379iw2vp2jxwzzsf5n1gmh4h.nar.zstd`
+///
+/// Consquently, URLs are R2 object keys have the following format:
+/// * URL: `nar/{filename}`
+/// * Cache object key: `{cache_name}/nar/{filename}`
+pub enum NarFilename {
+    Uuid(uuid::Uuid),
+    NarHash(NarHash, Compression),
+}
+
+impl NarFilename {
+    /// Returns the nar file's bucket object key
+    fn object_key(&self, cache_name: &str) -> String {
+        format!("{cache_name}/nar/{self}")
+    }
+
+    /// Returns the URL value that should appear in the corresponding narinfo
+    fn narinfo_url(&self) -> String {
+        format!("nar/{self}")
+    }
+}
+
+impl std::fmt::Display for NarFilename {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NarFilename::Uuid(nar_id) => write!(f, "{nar_id}"),
+
+            NarFilename::NarHash(nar_hash, compression) => write!(
+                f,
+                "{}.nar{}",
+                nar_hash.as_base32().bare(),
+                compression.extension()
+            ),
+        }
+    }
+}
+
+impl FromStr for NarFilename {
+    type Err = crate::Error;
+
+    fn from_str(filename: &str) -> Result<Self, Self::Err> {
+        let error = crate::Error::Validation {
+            field: "filename",
+            message: format!("unexpected nar filename: {filename}"),
+        };
+        match filename.split_once(".") {
+            None => Ok(NarFilename::Uuid(
+                uuid::Uuid::from_str(filename).map_err(|_| error)?,
+            )),
+            Some((nar_hash, extension)) => {
+                let compression = match extension.split_once('.') {
+                    None => Compression::None,
+                    Some(("nar", compression)) => Compression::from_str(compression)?,
+                    Some(_) => return Err(error),
+                };
+                let nar_hash = crate::narinfo::parse_nar_hash(nar_hash)?;
+                Ok(NarFilename::NarHash(nar_hash, compression))
+            }
+        }
+    }
+}
+
 fn narinfo_key(cache_name: &str, store_hash: &str) -> String {
     format!("{cache_name}/narinfo/{store_hash}")
-}
-
-fn narfile_key(cache_name: &str, nar_hash: &str, compression: Compression) -> String {
-    format!("{cache_name}/nar/{nar_hash}.nar{}", compression.extension())
-}
-
-fn narfile_url(nar_hash: &str, compression: Compression) -> String {
-    format!("nar/{nar_hash}.nar{}", compression.extension())
 }
 
 fn store_hash(narinfo_key: &str) -> Option<&str> {
@@ -99,7 +164,13 @@ impl BucketStore {
         let file_hash = narinfo
             .info
             .download_hash
-            .unwrap_or_else(|| narinfo.info.info.nar_hash.into());
+            .map(|hash| {
+                hash.try_into().map_err(|e| crate::Error::Validation {
+                    field: "download_hash",
+                    message: format!("invalid nar_hash: {e}"),
+                })
+            })
+            .unwrap_or_else(|| Ok(narinfo.info.info.nar_hash))?;
 
         let compression = narinfo
             .info
@@ -108,29 +179,23 @@ impl BucketStore {
             .map(Compression::from_str)
             .unwrap_or(Ok(Compression::None))?;
 
-        let narfile_key = narfile_key(
-            cache_name,
-            &file_hash.as_base32().bare().to_string(),
-            compression,
-        );
-
-        let nar_url = narfile_key.trim_prefix(cache_name).trim_prefix("/"); // TODO: this is stupid
+        let nar_filename = NarFilename::NarHash(file_hash, compression);
 
         let narinfo_url = narinfo.info.url.clone().ok_or(crate::Error::Validation {
             field: "URL",
             message: "missing URL".to_string(),
         })?;
 
-        if narinfo_url != nar_url {
+        if narinfo_url != nar_filename.narinfo_url() {
             return Err(crate::Error::Validation {
                 field: "URL",
-                message: format!("expected {nar_url}, got {narinfo_url}"),
+                message: format!("expected {}, got {narinfo_url}", nar_filename.narinfo_url()),
             });
         }
 
         let narfile = self
             .bucket
-            .head(narfile_key)
+            .head(nar_filename.object_key(cache_name))
             .await?
             .ok_or(crate::Error::Validation {
                 field: "nar",
@@ -171,13 +236,15 @@ impl BucketStore {
     ) -> Result<(uuid::Uuid, String), crate::Error> {
         let bucket = &self.bucket;
         let nar_id = uuid::Uuid::new_v4();
+        let nar_filename = NarFilename::Uuid(nar_id);
         let metadata = HttpMetadata {
             content_type: Some("application/x-nix-nar".to_string()),
             ..Default::default()
         };
         let multipart_upload = bucket
-            .create_multipart_upload(narfile_key(cache_name, &nar_id.to_string(), compression))
+            .create_multipart_upload(nar_filename.object_key(cache_name))
             .http_metadata(metadata)
+            .custom_metadata([("compression".to_string(), compression.to_string())])
             .execute()
             .await?;
         let upload_id = multipart_upload.upload_id().await;
@@ -187,17 +254,13 @@ impl BucketStore {
     pub(crate) async fn complete_nar_upload(
         &self,
         cache_name: &str,
-        nar_id: uuid::Uuid,
+        nar_filename: NarFilename,
         upload_id: &str,
-        compression: Compression,
         mut nar_info: NarInfo,
         parts: impl IntoIterator<Item = Part>,
     ) -> Result<(), crate::Error> {
-        let bucket = &self.bucket;
-        let upload = bucket.resume_multipart_upload(
-            narfile_key(cache_name, &nar_id.to_string(), compression), // TODO: how do we know what compression is being used?
-            upload_id,
-        );
+        let bucket: &Bucket = &self.bucket;
+        let upload = bucket.resume_multipart_upload(nar_filename.object_key(cache_name), upload_id);
 
         let upload = match upload {
             Ok(u) => u,
@@ -232,8 +295,28 @@ impl BucketStore {
                 ),
             });
         }
+        let expected_compression = object
+            .custom_metadata()?
+            .get("compression")
+            .map(|v| Compression::from_str(v))
+            .unwrap_or(Ok(Compression::None))?;
+        let actual_compression = nar_info
+            .info
+            .compression
+            .as_ref()
+            .map(|v| Compression::from_str(v))
+            .unwrap_or(Ok(Compression::None))?;
 
-        nar_info.info.url = Some(narfile_url(&nar_id.to_string(), compression));
+        if expected_compression != actual_compression {
+            return Err(crate::Error::Validation {
+                field: "compression",
+                message: format!(
+                    "invalid compression, expected {expected_compression}, got {actual_compression}"
+                ),
+            });
+        }
+
+        nar_info.info.url = Some(nar_filename.narinfo_url());
         let narinfo_txt = crate::narinfo::render_narinfo_text(&nar_info);
 
         bucket
@@ -254,8 +337,7 @@ impl BucketStore {
     pub fn presigned_nar_url(
         &self,
         cache_name: &str,
-        nar_id: &str,
-        compression: Compression,
+        nar_filename: NarFilename,
         method: Method,
         query_params: &[(&str, &str)],
         headers: &[(&str, &str)],
@@ -265,7 +347,7 @@ impl BucketStore {
             .path_segments_mut()
             .expect("url can be base")
             .push(&self.bucket_name)
-            .extend(narfile_key(cache_name, nar_id, compression).split('/'));
+            .extend(nar_filename.object_key(cache_name).split('/'));
         query_params
             .iter()
             .fold(&mut narfile_url.query_pairs_mut(), |qp, (key, value)| {
