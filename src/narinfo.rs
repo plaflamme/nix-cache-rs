@@ -1,32 +1,26 @@
 use std::{collections::BTreeSet, str::FromStr};
 
 use harmonia_utils_signature::SecretKey;
-use uuid::Uuid;
 
 use harmonia_store_nar_info::{NarInfo, UnkeyedNarInfo, format_narinfo_txt, parse_narinfo_txt};
-use harmonia_store_path::{FromStoreDirStr, StoreDir, StorePath};
+use harmonia_store_path::{
+    FromStoreDirStr, StoreDir, StorePath, StorePathError, StorePathHash, StorePathName,
+};
 use harmonia_store_path_info::{NarHash, UnkeyedValidPathInfo, fingerprint_path};
 use harmonia_utils_hash::fmt::Any;
 
 use crate::{Compression, api::NarInfoCreate};
 
-/// Renders the pushed [`NarInfoCreate`] as `NarInfo` text.
-/// This will also sign the fingerprint and add it as a `Sig` entry of the resulting narinfo.
 pub(crate) fn build_narinfo(
     create: &NarInfoCreate,
-    nar_id: &Uuid,
     compression: Compression,
 ) -> Result<NarInfo, crate::Error> {
     let nar_hash = parse_nar_hash_field("c_nar_hash", &create.c_nar_hash)?;
     let file_hash = parse_nar_hash_field("c_file_hash", &create.c_file_hash)?;
-
-    let base = format!("{}-{}", create.c_store_hash, create.c_store_suffix);
-    let store_path = base
-        .parse::<StorePath>()
-        .map_err(|e| crate::Error::Validation {
-            field: "store_path",
-            message: e.to_string(),
-        })?;
+    let store_path_hash = StorePathHash::from_str(&create.c_store_hash)?;
+    let store_path_name =
+        StorePathName::from_str(&create.c_store_suffix).map_err(StorePathError::from)?;
+    let store_path = StorePath::from((store_path_hash, store_path_name));
 
     let mut references = BTreeSet::new();
     for reference in &create.c_references {
@@ -64,7 +58,7 @@ pub(crate) fn build_narinfo(
                 ca: None,
                 store_dir: StoreDir::default(),
             },
-            url: Some(format!("nar/{nar_id}.nar{}", compression.extension())),
+            url: None,
             compression: Some(compression.to_string()),
             download_hash: Some(file_hash.into()),
             download_size: Some(create.c_file_size),
@@ -143,13 +137,11 @@ mod tests {
     #[test]
     fn renders_real_readline_payload() {
         let create = sample_create();
-        let nar_id = Uuid::nil();
-        let mut narinfo = build_narinfo(&create, &nar_id, Compression::Zstd).unwrap();
+        let mut narinfo = build_narinfo(&create, Compression::Zstd).unwrap();
         sign_narinfo(&mut narinfo, &secret_key());
         let text = render_narinfo_text(&narinfo);
-        let expected = format!(
-            "StorePath: /nix/store/4myf3s1i9rahd2my1zs2cqify7y930sk-readline-8.3p3\n\
-             URL: nar/{nar_id}.nar.zst\n\
+        let expected = "StorePath: /nix/store/4myf3s1i9rahd2my1zs2cqify7y930sk-readline-8.3p3\n\
+             URL: \n\
              Compression: zstd\n\
              FileHash: sha256:1gryjhjb0kwdbv8xrap77ac7nbx2w39zl24g6pq3s5kh8rjayqp3\n\
              FileSize: 212516\n\
@@ -158,8 +150,7 @@ mod tests {
              References: 0d8g8n0a11v6f5m2h416ajyxmnkwc3md-glibc-2.42-67 \
              zlvs6miv8wfki399pmxri7x0sjd3429c-ncurses-6.6\n\
              Deriver: 28544zr6433qkx35zq4yq54kq0b8zj5f-readline.drv\n\
-             Sig: cache.example.com-1:TaiCdsGXu8o3TzbTmvGg40M159q5jdlw5dd7QOHGbKHXqyeYWSURLEEKn6olV2nYOukq3tsp1sRQnFvVRjGSAg==\n"
-        );
+             Sig: cache.example.com-1:TaiCdsGXu8o3TzbTmvGg40M159q5jdlw5dd7QOHGbKHXqyeYWSURLEEKn6olV2nYOukq3tsp1sRQnFvVRjGSAg==\n";
         assert_eq!(text, expected);
     }
 
@@ -167,14 +158,14 @@ mod tests {
     fn omits_references_line_when_empty() {
         let mut create = sample_create();
         create.c_references = vec![];
-        let narinfo = build_narinfo(&create, &Uuid::nil(), Compression::Zstd).unwrap();
+        let narinfo = build_narinfo(&create, Compression::Zstd).unwrap();
         assert!(narinfo.info.info.references.is_empty());
     }
 
     #[test]
     fn round_trips_through_crate_parser() {
         let create = sample_create();
-        let narinfo = build_narinfo(&create, &Uuid::nil(), Compression::Zstd).unwrap();
+        let narinfo = build_narinfo(&create, Compression::Zstd).unwrap();
         let text = render_narinfo_text(&narinfo);
         let parsed = parse_narinfo_txt(&StoreDir::default(), &text).unwrap();
         assert_eq!(
@@ -196,7 +187,7 @@ mod tests {
     fn rejects_invalid_nar_hash() {
         let mut create = sample_create();
         create.c_nar_hash = "not-a-nar-hash".to_string();
-        let err = build_narinfo(&create, &Uuid::nil(), Compression::Zstd).unwrap_err();
+        let err = build_narinfo(&create, Compression::Zstd).unwrap_err();
         assert!(
             matches!(err, crate::Error::Validation { .. }),
             "unexpected error: {err:?}"
@@ -207,7 +198,7 @@ mod tests {
     fn rejects_invalid_file_hash() {
         let mut create = sample_create();
         create.c_file_hash = "xyz".to_string();
-        let err = build_narinfo(&create, &Uuid::nil(), Compression::Zstd).unwrap_err();
+        let err = build_narinfo(&create, Compression::Zstd).unwrap_err();
         assert!(
             matches!(err, crate::Error::Validation { .. }),
             "unexpected error: {err:?}"
@@ -218,9 +209,9 @@ mod tests {
     fn rejects_invalid_store_path() {
         let mut create = sample_create();
         create.c_store_hash = "!!!not-base32!!!".to_string();
-        let err = build_narinfo(&create, &Uuid::nil(), Compression::Zstd).unwrap_err();
+        let err = build_narinfo(&create, Compression::Zstd).unwrap_err();
         assert!(
-            matches!(err, crate::Error::Validation { .. }),
+            matches!(err, crate::Error::StorePathError { .. }),
             "unexpected error: {err:?}"
         );
     }
@@ -229,7 +220,7 @@ mod tests {
     fn rejects_invalid_reference() {
         let mut create = sample_create();
         create.c_references = vec!["not-a-store-path".to_string()];
-        let err = build_narinfo(&create, &Uuid::nil(), Compression::Zstd).unwrap_err();
+        let err = build_narinfo(&create, Compression::Zstd).unwrap_err();
         assert!(
             matches!(err, crate::Error::Validation { .. }),
             "unexpected error: {err:?}"
@@ -240,7 +231,7 @@ mod tests {
     fn accepts_unknown_deriver() {
         let mut create = sample_create();
         create.c_deriver = "unknown-deriver".to_string();
-        let result = build_narinfo(&create, &Uuid::nil(), Compression::Zstd);
+        let result = build_narinfo(&create, Compression::Zstd);
         assert!(result.is_ok());
     }
 }

@@ -201,12 +201,14 @@ async fn complete_multipart_upload(
     Query(params): Query<CompleteMultipartUploadParameterss>,
     Json(request): Json<CompleteMultipartUploadRequest>,
 ) -> Result<StatusCode, crate::Error> {
+    let compression = Compression::Zstd;
     app.store
         .complete_nar_upload(
             &cache_name,
             nar_id,
             &params.upload_id,
-            crate::narinfo::build_narinfo(&request.nar_info_create, &nar_id, Compression::Zstd)?,
+            compression,
+            crate::narinfo::build_narinfo(&request.nar_info_create, compression)?,
             request.parts.into_iter().map(|part| {
                 crate::store::Part(
                     part.part_number,

@@ -18,6 +18,10 @@ fn narfile_key(cache_name: &str, nar_hash: &str, compression: Compression) -> St
     format!("{cache_name}/nar/{nar_hash}.nar{}", compression.extension())
 }
 
+fn narfile_url(nar_hash: &str, compression: Compression) -> String {
+    format!("nar/{nar_hash}.nar{}", compression.extension())
+}
+
 fn store_hash(narinfo_key: &str) -> Option<&str> {
     narinfo_key.split('/').next_back()
 }
@@ -185,12 +189,13 @@ impl BucketStore {
         cache_name: &str,
         nar_id: uuid::Uuid,
         upload_id: &str,
-        nar_info: NarInfo,
+        compression: Compression,
+        mut nar_info: NarInfo,
         parts: impl IntoIterator<Item = Part>,
     ) -> Result<(), crate::Error> {
         let bucket = &self.bucket;
         let upload = bucket.resume_multipart_upload(
-            narfile_key(cache_name, &nar_id.to_string(), Compression::Zstd), // TODO: how do we know what compression is being used?
+            narfile_key(cache_name, &nar_id.to_string(), compression), // TODO: how do we know what compression is being used?
             upload_id,
         );
 
@@ -215,7 +220,7 @@ impl BucketStore {
         };
 
         // TODO: validate narinfo matches _object
-
+        nar_info.info.url = Some(narfile_url(&nar_id.to_string(), compression));
         let narinfo_txt = crate::narinfo::render_narinfo_text(&nar_info);
 
         bucket
