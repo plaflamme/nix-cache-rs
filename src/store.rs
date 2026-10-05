@@ -96,12 +96,27 @@ impl FromStr for NarFilename {
     }
 }
 
-fn narinfo_key(cache_name: &str, store_hash: &str) -> String {
-    format!("{cache_name}/narinfo/{store_hash}")
-}
+struct NarinfoFilename;
+impl NarinfoFilename {
+    /// Returns the object key to use to scan all narinfo files in the bucket for the specified cache.
+    fn scan_key(cache_name: &str) -> String {
+        format!("{cache_name}/narinfo/")
+    }
+    /// Returns the object key to use for the specified StorePath hash.
+    fn object_key(cache_name: &str, store_path_hash: &StorePathHash) -> String {
+        format!("{cache_name}/narinfo/{store_path_hash}")
+    }
 
-fn store_hash(narinfo_key: &str) -> Option<&str> {
-    narinfo_key.split('/').next_back()
+    /// Parses an object key and returns the StorePath hash. Note that this function assumes that `object_key` was used to produce the key.
+    fn from_object_key(object_key: &str) -> Result<&str, crate::Error> {
+        let Some(store_path) = object_key.split('/').next_back() else {
+            return Err(crate::Error::Validation {
+                field: "store_path",
+                message: format!("unexpected narinfo object key format: {object_key}"),
+            });
+        };
+        Ok(store_path)
+    }
 }
 
 pub struct Part(pub u16, pub String);
@@ -136,6 +151,42 @@ impl BucketStore {
         }
     }
 
+    pub async fn narinfo_lookup(
+        &self,
+        cache_name: &str,
+        hashes: &mut std::collections::BTreeSet<String>,
+    ) -> Result<(), crate::Error> {
+        // NOTE: this approach doesn't scale well since we effectively have to list all narinfo objects in R2
+        // But it was chosen to avoid introducing another dependency, like KVStore or D1.
+        // Using `head` on each key is too slow when the list of hashes is large.
+        //
+        // TODO: use both strategies dependening on the number of hashes to list. Under say 5 hashes, it's probably faster to make 5 HEAD requests than list all narinfo files.
+
+        let bucket = &self.bucket;
+        let mut cursor = None;
+        while !hashes.is_empty() {
+            let list_objects = bucket.list().prefix(NarinfoFilename::scan_key(cache_name));
+
+            let objects = match cursor {
+                Some(c) => list_objects.cursor(c),
+                None => list_objects,
+            }
+            .execute()
+            .await?;
+
+            cursor = objects.cursor();
+
+            for object in objects.objects().into_iter() {
+                hashes.remove(NarinfoFilename::from_object_key(&object.key())?);
+            }
+
+            if !objects.truncated() {
+                break;
+            }
+        }
+        Ok(())
+    }
+
     /// Reads the narinfo file for the specified store path hash and appends the store's signature.
     pub async fn get_narinfo(
         &self,
@@ -144,7 +195,7 @@ impl BucketStore {
     ) -> Result<Option<NarInfo>, crate::Error> {
         let narinfo_object = self
             .bucket
-            .get(narinfo_key(cache_name, &store_hash.to_string()))
+            .get(NarinfoFilename::object_key(cache_name, &store_hash))
             .execute()
             .await?;
 
@@ -229,7 +280,7 @@ impl BucketStore {
 
         self.bucket
             .put(
-                narinfo_key(cache_name, &store_path.hash().to_string()),
+                NarinfoFilename::object_key(cache_name, store_path.hash()),
                 crate::narinfo::render_narinfo_text(narinfo),
             )
             .http_metadata(HttpMetadata {
@@ -334,7 +385,7 @@ impl BucketStore {
 
         bucket
             .put(
-                narinfo_key(cache_name, &nar_info.path.hash().to_string()),
+                NarinfoFilename::object_key(cache_name, nar_info.path.hash()),
                 narinfo_txt,
             )
             .http_metadata(HttpMetadata {

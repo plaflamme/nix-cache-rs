@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use super::{cache_info, narinfo_key, store_hash};
+use super::cache_info;
 use crate::Compression;
 use crate::NixCacheApp;
 use crate::store::NarFilename;
@@ -50,41 +50,13 @@ async fn get_cache(
 }
 
 #[worker::send]
+#[axum_macros::debug_handler]
 async fn missing_narinfo(
     State(app): State<NixCacheApp>,
     Path(cache_name): Path<String>,
     Json(mut hashes): Json<BTreeSet<String>>,
 ) -> Result<Json<BTreeSet<String>>, crate::Error> {
-    // NOTE: this approach doesn't scale well since we effectively have to list all narinfo objects in R2
-    // But it was chosen to avoid introducing another dependency, like KVStore or D1.
-    // Using `head` on each key is too slow
-
-    let bucket = &app.store.bucket;
-    let mut cursor = None;
-    while !hashes.is_empty() {
-        let list_objects = bucket.list().prefix(narinfo_key(&cache_name, "narinfo/"));
-
-        let objects = match cursor {
-            Some(c) => list_objects.cursor(c),
-            None => list_objects,
-        }
-        .execute()
-        .await?;
-
-        cursor = objects.cursor();
-
-        for hash in objects.objects().into_iter().map(|o| {
-            store_hash(&o.key())
-                .expect("narinfo_key has a valid format")
-                .to_string()
-        }) {
-            hashes.remove(&hash);
-        }
-
-        if !objects.truncated() {
-            break;
-        }
-    }
+    app.store.narinfo_lookup(&cache_name, &mut hashes).await?;
     Ok(Json(hashes))
 }
 
