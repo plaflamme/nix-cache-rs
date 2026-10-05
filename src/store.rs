@@ -29,6 +29,8 @@ use crate::Compression;
 pub enum NarFilename {
     Uuid(uuid::Uuid),
     NarHash(NarHash, Compression),
+    // For compatibility with previous format
+    Compat(uuid::Uuid, Compression),
 }
 
 impl NarFilename {
@@ -54,6 +56,10 @@ impl std::fmt::Display for NarFilename {
                 nar_hash.as_base32().bare(),
                 compression.extension()
             ),
+
+            NarFilename::Compat(nar_id, compression) => {
+                write!(f, "{nar_id}.nar{}", compression.extension())
+            }
         }
     }
 }
@@ -76,8 +82,15 @@ impl FromStr for NarFilename {
                     Some(("nar", compression)) => Compression::from_str(compression)?,
                     Some(_) => return Err(error),
                 };
-                let nar_hash = crate::narinfo::parse_nar_hash(nar_hash)?;
-                Ok(NarFilename::NarHash(nar_hash, compression))
+                match crate::narinfo::parse_nar_hash(nar_hash) {
+                    Ok(nar_hash) => Ok(NarFilename::NarHash(nar_hash, compression)),
+                    Err(e) => {
+                        let Ok(uuid) = uuid::Uuid::from_str(nar_hash) else {
+                            return Err(e);
+                        };
+                        Ok(NarFilename::Compat(uuid, compression))
+                    }
+                }
             }
         }
     }
