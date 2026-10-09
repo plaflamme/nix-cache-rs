@@ -11,6 +11,8 @@ use worker::{Bucket, HttpMetadata};
 
 use crate::Compression;
 
+const COMPRESSION_CUSTOM_METADATA: &str = "compression";
+
 /// Two styles for Nar filenames:
 /// * UUID - used by cachix
 /// * NarHash and compression - used by `nix copy`
@@ -308,7 +310,10 @@ impl BucketStore {
         let multipart_upload = bucket
             .create_multipart_upload(nar_filename.object_key(cache_name))
             .http_metadata(metadata)
-            .custom_metadata([("compression".to_string(), compression.to_string())])
+            .custom_metadata([(
+                COMPRESSION_CUSTOM_METADATA.to_string(),
+                compression.to_string(),
+            )])
             .execute()
             .await?;
         let upload_id = multipart_upload.upload_id().await;
@@ -359,11 +364,16 @@ impl BucketStore {
                 ),
             });
         }
+
         let expected_compression = object
             .custom_metadata()?
-            .get("compression")
-            .map(|v| Compression::from_str(v))
-            .unwrap_or(Ok(Compression::None))?;
+            .get(COMPRESSION_CUSTOM_METADATA)
+            .ok_or(crate::Error::Validation {
+                field: COMPRESSION_CUSTOM_METADATA,
+                message: format!("missing custom metadata: {COMPRESSION_CUSTOM_METADATA}"),
+            })
+            .and_then(|v| Compression::from_str(v))?;
+
         let actual_compression = nar_info
             .info
             .compression
