@@ -342,7 +342,13 @@ impl BucketStore {
         };
 
         let object = match upload.complete(parts.into_iter().map(Into::into)).await {
-            Ok(object) => object,
+            Ok(_object) => {
+                // https://github.com/cloudflare/developer-platform/issues/3
+                bucket
+                    .head(nar_filename.object_key(cache_name))
+                    .await?
+                    .unwrap()
+            }
             Err(e) => {
                 return Err(crate::Error::Validation {
                     field: "parts",
