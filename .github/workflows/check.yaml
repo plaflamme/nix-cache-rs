@@ -40,6 +40,9 @@ jobs:
           done
   auto-merge:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     if: ${{ github.actor == 'dependabot[bot]' && github.event_name == 'pull_request' && github.repository_owner == 'plaflamme' }}
     steps:
       - uses: actions/checkout@v7
