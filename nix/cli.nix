@@ -59,6 +59,21 @@ pkgs.writeShellApplication {
       [[r2_buckets]]
       bucket_name = "$BUCKET_NAME"
       binding = "nix-cache-bucket"
+
+      [observability]
+      enabled = false
+      head_sampling_rate = 1
+
+      [observability.logs]
+      enabled = true
+      head_sampling_rate = 1
+      persist = true
+      invocation_logs = true
+
+      [observability.traces]
+      enabled = true
+      persist = true
+      head_sampling_rate = 1
     EOF
       echo "$wrangler_toml_dir"
     }
