@@ -42,6 +42,7 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ github.actor == 'dependabot[bot]' && github.event_name == 'pull_request' && github.repository_owner == 'plaflamme' }}
     steps:
+      - uses: actions/checkout@v7
       - run: gh pr merge --auto --merge ${{github.event.pull_request.number}}
         env:
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
