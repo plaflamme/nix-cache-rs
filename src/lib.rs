@@ -8,6 +8,7 @@ mod narinfo;
 mod r2_sig;
 mod store;
 mod time;
+mod upstream;
 
 pub use app::NixCacheApp;
 use axum::response::IntoResponse;
