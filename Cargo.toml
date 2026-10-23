@@ -18,6 +18,7 @@ axum = { version = "0.8", default-features = false, features = [
 ] }
 axum-macros = { version = "0.5" }
 base64 = { version = "*", default-features = false, features = ["std"] }
+futures = "0.3"
 getrandom = { version = "0.4", features = ["wasm_js"] }
 harmonia-store-nar-info = { git = "https://github.com/nix-community/harmonia" }
 harmonia-store-path = { git = "https://github.com/nix-community/harmonia" }

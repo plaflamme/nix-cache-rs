@@ -2,7 +2,6 @@ use std::collections::BTreeSet;
 
 use futures::stream::FuturesUnordered;
 use futures::stream::StreamExt;
-use http::request;
 use url::Url;
 
 /// An upstream nix cache.
@@ -11,29 +10,40 @@ use url::Url;
 /// But this means that a client may upload NARs that exist in other caches it uses.
 ///
 /// As such, we also want to filter out hashes that upstream caches hold.
-struct Upstream {
+#[derive(Clone)]
+pub struct Upstream {
     url: Url,
 }
 
 impl Upstream {
-    async fn narinfo_lookup(&self, hashes: &mut BTreeSet<String>) -> Result<(), crate::Error> {
+    pub fn cache_nixos_org() -> Self {
+        Self {
+            url: url::Url::parse("https://cache.nixos.org").expect("URL is valid"),
+        }
+    }
+
+    pub async fn narinfo_lookup(&self, hashes: &mut BTreeSet<String>) -> Result<(), crate::Error> {
         let mut fetches = FuturesUnordered::new();
         for h in hashes.iter() {
-            fetches.push(lookup(h));
+            fetches.push(self.lookup(h.clone()));
         }
-        while let Some(hash) = fetches.await? {
-            hashes.remove(hash);
+        while let Some(hash) = fetches.next().await {
+            if let Some(hash) = hash? {
+                hashes.remove(&hash);
+            }
         }
         Ok(())
     }
 
-    async fn lookup(&self, hash: &str) -> Result<Option<&str>, crate::Error> {
-        let request = worker::request::Builder::new()
-            .uri(self.url.clone().join(format!("/{hash}.narinfo")?))
-            .method("HEAD")
-            .body(())?;
-        let response = worker::Fetch::Request(request).send().await?;
-        if response.status_code() < 400 {
+    async fn lookup(&self, hash: String) -> Result<Option<String>, crate::Error> {
+        let request = worker::Request::new(
+            self.url.clone().join(&format!("/{hash}.narinfo"))?.as_str(),
+            worker::Method::Head,
+        )?;
+        let response = worker::Fetch::Request(request).send().await;
+        if let Ok(response) = response // ignore failed requests, worse thing is we cache something already cached upstream
+            && response.status_code() < 400
+        {
             Ok(Some(hash))
         } else {
             Ok(None)

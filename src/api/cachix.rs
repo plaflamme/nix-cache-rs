@@ -56,6 +56,7 @@ async fn missing_narinfo(
     Path(cache_name): Path<String>,
     Json(mut hashes): Json<BTreeSet<String>>,
 ) -> Result<Json<BTreeSet<String>>, crate::Error> {
+    app.upstream.narinfo_lookup(&mut hashes).await?;
     app.store.narinfo_lookup(&cache_name, &mut hashes).await?;
     Ok(Json(hashes))
 }

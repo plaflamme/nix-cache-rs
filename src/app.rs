@@ -4,12 +4,13 @@ use harmonia_utils_signature::{PublicKey, SecretKey};
 use url::Url;
 use worker::Env;
 
-use crate::store::BucketStore;
+use crate::{store::BucketStore, upstream::Upstream};
 
 #[derive(Clone)]
 pub struct NixCacheApp {
     pub auth_token: String,
     pub store: Arc<BucketStore>,
+    pub upstream: Upstream,
     pub signing_public_key: PublicKey,
 }
 
@@ -41,6 +42,7 @@ impl TryFrom<Env> for NixCacheApp {
                 })?,
                 SecretKey::from_str(&env.secret("SIGNING_PRIVATE_KEY")?.to_string())?,
             )),
+            upstream: Upstream::cache_nixos_org(),
             signing_public_key: PublicKey::from_str(
                 &env.secret("SIGNING_PUBLIC_KEY")?.to_string(),
             )?,

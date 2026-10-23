@@ -23,6 +23,8 @@ pub enum Error {
     NarInfoParseError(#[from] NarInfoParseError),
     #[error("Invalid store path or store path hash: {0}")]
     StorePathError(#[from] StorePathError),
+    #[error("Failed to parse url: {0}")]
+    UrlParseError(#[from] url::ParseError),
 
     /// A client-supplied value failed validation. Rendered as HTTP 400.
     #[error("validation error: {field}: {message}")]
@@ -38,6 +40,7 @@ impl IntoResponse for Error {
             Error::Validation { .. } => http::StatusCode::BAD_REQUEST,
             Error::NarInfoParseError { .. } => http::StatusCode::BAD_REQUEST,
             Error::StorePathError { .. } => http::StatusCode::BAD_REQUEST,
+            Error::UrlParseError { .. } => http::StatusCode::BAD_REQUEST,
             _ => http::StatusCode::INTERNAL_SERVER_ERROR,
         };
         worker::console_warn!("{status}: {self}");
