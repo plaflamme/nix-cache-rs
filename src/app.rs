@@ -42,7 +42,7 @@ impl TryFrom<Env> for NixCacheApp {
                 })?,
                 SecretKey::from_str(&env.secret("SIGNING_PRIVATE_KEY")?.to_string())?,
             )),
-            upstream: Upstream::cache_nixos_org(),
+            upstream: Upstream::nix_community_cachix_org(),
             signing_public_key: PublicKey::from_str(
                 &env.secret("SIGNING_PUBLIC_KEY")?.to_string(),
             )?,

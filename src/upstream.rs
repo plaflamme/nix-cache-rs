@@ -11,33 +11,60 @@ use url::Url;
 ///
 /// As such, we also want to filter out hashes that upstream caches hold.
 #[derive(Clone)]
-pub struct Upstream {
-    url: Url,
+pub enum Upstream {
+    Cachix { cache_name: String },
+    Nix { url: Url },
 }
 
 impl Upstream {
     pub fn cache_nixos_org() -> Self {
-        Self {
+        Self::Nix {
             url: url::Url::parse("https://cache.nixos.org").expect("URL is valid"),
         }
     }
 
-    pub async fn narinfo_lookup(&self, hashes: &mut BTreeSet<String>) -> Result<(), crate::Error> {
-        let mut fetches = FuturesUnordered::new();
-        for h in hashes.iter() {
-            fetches.push(self.lookup(h.clone()));
+    pub fn nix_community_cachix_org() -> Self {
+        Self::Cachix {
+            cache_name: "nix-community".to_string(),
         }
-        while let Some(hash) = fetches.next().await {
-            if let Some(hash) = hash? {
-                hashes.remove(&hash);
-            }
-        }
-        Ok(())
     }
 
-    async fn lookup(&self, hash: String) -> Result<Option<String>, crate::Error> {
+    pub async fn narinfo_lookup(&self, hashes: &mut BTreeSet<String>) -> Result<(), crate::Error> {
+        match self {
+            Self::Cachix { cache_name } => {
+                let request = worker::Request::new_with_init(
+                    &format!("https://app.cachix.org/api/v1/cache/{cache_name}/narinfo"),
+                    worker::RequestInit::new()
+                        .with_method(worker::Method::Post)
+                        .with_body(Some(serde_wasm_bindgen::to_value(&hashes)?)),
+                )?;
+
+                let remain = worker::Fetch::Request(request)
+                    .send()
+                    .await?
+                    .json::<BTreeSet<String>>()
+                    .await?;
+                *hashes = remain;
+                Ok(())
+            }
+            Self::Nix { url } => {
+                let mut fetches = FuturesUnordered::new();
+                for h in hashes.iter() {
+                    fetches.push(self.lookup(url, h.clone()));
+                }
+                while let Some(hash) = fetches.next().await {
+                    if let Some(hash) = hash? {
+                        hashes.remove(&hash);
+                    }
+                }
+                Ok(())
+            }
+        }
+    }
+
+    async fn lookup(&self, base_url: &Url, hash: String) -> Result<Option<String>, crate::Error> {
         let request = worker::Request::new(
-            self.url.clone().join(&format!("/{hash}.narinfo"))?.as_str(),
+            base_url.join(&format!("/{hash}.narinfo"))?.as_str(),
             worker::Method::Head,
         )?;
         let response = worker::Fetch::Request(request).send().await;
