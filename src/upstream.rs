@@ -32,15 +32,14 @@ impl Upstream {
     pub async fn narinfo_lookup(&self, hashes: &mut BTreeSet<String>) -> Result<(), crate::Error> {
         match self {
             Self::Cachix { cache_name } => {
-                let headers = worker::Headers::new();
-                headers
-                    .append(http::header::CONTENT_TYPE.as_str(), "application/json")
-                    .expect("header key and value are valid");
                 let request = worker::Request::new_with_init(
                     &format!("https://app.cachix.org/api/v1/cache/{cache_name}/narinfo"),
                     worker::RequestInit::new()
                         .with_method(worker::Method::Post)
-                        .with_headers(headers)
+                        .with_headers(worker::Headers::from_iter([
+                            (http::header::HOST.as_str(), "app.cachix.org"),
+                            (http::header::CONTENT_TYPE.as_str(), "application/json"),
+                        ]))
                         .with_body(Some(serde_wasm_bindgen::to_value(&hashes)?)),
                 )?;
 
