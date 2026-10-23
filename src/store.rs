@@ -158,6 +158,9 @@ impl BucketStore {
         cache_name: &str,
         hashes: &mut std::collections::BTreeSet<String>,
     ) -> Result<(), crate::Error> {
+        if hashes.is_empty() {
+            return Ok(());
+        }
         // NOTE: this approach doesn't scale well since we effectively have to list all narinfo objects in R2
         // But it was chosen to avoid introducing another dependency, like KVStore or D1.
         // Using `head` on each key is too slow when the list of hashes is large.
