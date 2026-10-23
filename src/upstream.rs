@@ -1,6 +1,5 @@
 use std::collections::BTreeSet;
 
-use futures::stream::FuturesUnordered;
 use futures::stream::StreamExt;
 use url::Url;
 
@@ -23,10 +22,10 @@ impl Upstream {
     }
 
     pub async fn narinfo_lookup(&self, hashes: &mut BTreeSet<String>) -> Result<(), crate::Error> {
-        let mut fetches = FuturesUnordered::new();
-        for h in hashes.iter() {
-            fetches.push(self.lookup(h.clone()));
-        }
+        let mut fetches = futures::stream::iter(hashes.clone())
+            .map(|h| self.lookup(h))
+            .buffer_unordered(50); // https://developers.cloudflare.com/workers/platform/limits/#subrequests
+
         while let Some(hash) = fetches.next().await {
             if let Some(hash) = hash? {
                 hashes.remove(&hash);
