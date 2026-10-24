@@ -15,6 +15,7 @@ use http::StatusCode;
 use serde::Deserialize;
 use serde::Serialize;
 use uuid::Uuid;
+use worker::console_warn;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -56,7 +57,9 @@ async fn missing_narinfo(
     Path(cache_name): Path<String>,
     Json(mut hashes): Json<BTreeSet<String>>,
 ) -> Result<Json<BTreeSet<String>>, crate::Error> {
-    app.upstream.narinfo_lookup(&mut hashes).await?;
+    if let Err(e) = app.upstream.narinfo_lookup(&mut hashes).await {
+        console_warn!("upstream request failed: {e}")
+    }
     app.store.narinfo_lookup(&cache_name, &mut hashes).await?;
     Ok(Json(hashes))
 }

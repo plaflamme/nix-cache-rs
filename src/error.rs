@@ -25,8 +25,8 @@ pub enum Error {
     StorePathError(#[from] StorePathError),
     #[error("Failed to parse url: {0}")]
     UrlParseError(#[from] url::ParseError),
-    #[error("Failed to de/ser json: {0}")]
-    JsError(#[from] serde_wasm_bindgen::Error),
+    #[error("Reqwest error: {0}")]
+    ReqwestError(#[from] reqwest::Error),
 
     /// A client-supplied value failed validation. Rendered as HTTP 400.
     #[error("validation error: {field}: {message}")]
