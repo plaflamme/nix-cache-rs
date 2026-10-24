@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 use futures::stream::FuturesUnordered;
 use futures::stream::StreamExt;
 use url::Url;
+use worker::console_error;
 
 /// An upstream nix cache.
 ///
@@ -43,10 +44,12 @@ impl Upstream {
                         .with_body(Some(serde_wasm_bindgen::to_value(&hashes)?)),
                 )?;
 
-                if let Ok(mut response) = worker::Fetch::Request(request).send().await
-                    && let Ok(remain) = response.json::<BTreeSet<String>>().await
-                {
-                    *hashes = remain;
+                match worker::Fetch::Request(request).send().await {
+                    Err(e) => console_error!("{e}"),
+                    Ok(mut response) => match response.json::<BTreeSet<String>>().await {
+                        Err(e) => console_error!("{e}"),
+                        Ok(remain) => *hashes = remain,
+                    },
                 }
                 Ok(())
             }
