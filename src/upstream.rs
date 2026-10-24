@@ -3,6 +3,8 @@ use std::collections::BTreeSet;
 use futures::stream::FuturesUnordered;
 use futures::stream::StreamExt;
 use url::Url;
+use worker::console_error;
+use worker::console_log;
 
 /// An upstream nix cache.
 ///
@@ -32,21 +34,31 @@ impl Upstream {
     pub async fn narinfo_lookup(&self, hashes: &mut BTreeSet<String>) -> Result<(), crate::Error> {
         match self {
             Self::Cachix { cache_name } => {
-                let request = worker::Request::new_with_init(
-                    &format!("https://app.cachix.org/api/v1/cache/{cache_name}/narinfo"),
-                    worker::RequestInit::new()
-                        .with_method(worker::Method::Post)
-                        .with_headers(worker::Headers::from_iter([
-                            (http::header::HOST.as_str(), "app.cachix.org"),
-                            (http::header::CONTENT_TYPE.as_str(), "application/json"),
-                        ]))
-                        .with_body(Some(serde_wasm_bindgen::to_value(&hashes)?)),
-                )?;
+                let client = reqwest::ClientBuilder::new().build()?;
 
-                if let Ok(mut response) = worker::Fetch::Request(request).send().await
-                    && let Ok(remain) = response.json::<BTreeSet<String>>().await
-                {
+                let response = client
+                    .post(format!(
+                        "https://app.cachix.org/api/v1/cache/{cache_name}/narinfo"
+                    ))
+                    .header(http::header::CONTENT_TYPE, "application/json")
+                    .json(hashes)
+                    .send()
+                    .await?;
+
+                if response.status().is_success() {
+                    let remain = response.json::<BTreeSet<String>>().await?;
+                    console_log!(
+                        "hashes requested upstream: {}, hashes remaining: {}",
+                        hashes.len(),
+                        remain.len()
+                    );
                     *hashes = remain;
+                } else {
+                    console_error!(
+                        "Upstream request failed ({}): {}",
+                        response.status(),
+                        response.text().await?
+                    )
                 }
                 Ok(())
             }
