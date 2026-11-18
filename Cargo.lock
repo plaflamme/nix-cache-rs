@@ -69,9 +69,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sigv4"
-version = "1.6.4"
+version = "1.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f385da9b7757ed4c8214797ad663ff534fb622006143530aa80e21f8e06ff85c"
+checksum = "57a4393e6addc3380632887b0998d06ad5f099ab5c478be0a3eeedecf8604161"
 dependencies = [
  "aws-credential-types",
  "aws-smithy-http",
@@ -121,9 +121,9 @@ dependencies = [
 
 [[package]]
 name = "aws-smithy-runtime-api"
-version = "1.19.2"
+version = "1.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8c4e85cffe9944b10d576b075432bd8f98dbc081e8681cb37d5b2d87dc27bc84"
+checksum = "c0b79dbb5331ccd297686df811d50ab3f39db171f5c765372a69272a0990b014"
 dependencies = [
  "aws-smithy-async",
  "aws-smithy-runtime-api-macros",
@@ -149,9 +149,9 @@ dependencies = [
 
 [[package]]
 name = "aws-smithy-types"
-version = "1.9.1"
+version = "1.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf183d70774ea2cfcc101ca74a8884e4c76be8b9df65cd303f6a1175c88e8f80"
+checksum = "aff4bf014c512840b2bba80a20417b723cbd6a0a65c02e2d81f50b4268aedfc7"
 dependencies = [
  "base64-simd",
  "bytes",
@@ -160,7 +160,6 @@ dependencies = [
  "http-body",
  "http-body-util",
  "itoa",
- "num-integer",
  "pin-project-lite",
  "ryu",
  "serde",
@@ -675,7 +674,7 @@ dependencies = [
 [[package]]
 name = "harmonia-store-content-address"
 version = "3.3.0"
-source = "git+https://github.com/nix-community/harmonia#637dd7e14bf837f8408d0994059f4a7477232cca"
+source = "git+https://github.com/nix-community/harmonia#6e572f473b1cf50f9ebe2913de283b1cf95f3c02"
 dependencies = [
  "derive_more",
  "harmonia-store-path",
@@ -687,7 +686,7 @@ dependencies = [
 [[package]]
 name = "harmonia-store-nar-info"
 version = "3.3.0"
-source = "git+https://github.com/nix-community/harmonia#637dd7e14bf837f8408d0994059f4a7477232cca"
+source = "git+https://github.com/nix-community/harmonia#6e572f473b1cf50f9ebe2913de283b1cf95f3c02"
 dependencies = [
  "harmonia-store-content-address",
  "harmonia-store-path",
@@ -701,7 +700,7 @@ dependencies = [
 [[package]]
 name = "harmonia-store-path"
 version = "3.3.0"
-source = "git+https://github.com/nix-community/harmonia#637dd7e14bf837f8408d0994059f4a7477232cca"
+source = "git+https://github.com/nix-community/harmonia#6e572f473b1cf50f9ebe2913de283b1cf95f3c02"
 dependencies = [
  "derive_more",
  "harmonia-utils-base-encoding",
@@ -714,7 +713,7 @@ dependencies = [
 [[package]]
 name = "harmonia-store-path-info"
 version = "3.3.0"
-source = "git+https://github.com/nix-community/harmonia#637dd7e14bf837f8408d0994059f4a7477232cca"
+source = "git+https://github.com/nix-community/harmonia#6e572f473b1cf50f9ebe2913de283b1cf95f3c02"
 dependencies = [
  "harmonia-store-content-address",
  "harmonia-store-path",
@@ -726,7 +725,7 @@ dependencies = [
 [[package]]
 name = "harmonia-utils-base-encoding"
 version = "0.0.0-alpha.0"
-source = "git+https://github.com/nix-community/harmonia#637dd7e14bf837f8408d0994059f4a7477232cca"
+source = "git+https://github.com/nix-community/harmonia#6e572f473b1cf50f9ebe2913de283b1cf95f3c02"
 dependencies = [
  "data-encoding",
  "derive_more",
@@ -736,7 +735,7 @@ dependencies = [
 [[package]]
 name = "harmonia-utils-hash"
 version = "0.0.0-alpha.0"
-source = "git+https://github.com/nix-community/harmonia#637dd7e14bf837f8408d0994059f4a7477232cca"
+source = "git+https://github.com/nix-community/harmonia#6e572f473b1cf50f9ebe2913de283b1cf95f3c02"
 dependencies = [
  "aws-lc-rs",
  "blake3",
@@ -754,7 +753,7 @@ dependencies = [
 [[package]]
 name = "harmonia-utils-signature"
 version = "3.3.0"
-source = "git+https://github.com/nix-community/harmonia#637dd7e14bf837f8408d0994059f4a7477232cca"
+source = "git+https://github.com/nix-community/harmonia#6e572f473b1cf50f9ebe2913de283b1cf95f3c02"
 dependencies = [
  "data-encoding",
  "ed25519-dalek",
@@ -1141,15 +1140,6 @@ name = "num-conv"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "521739c6d2bac4aa25192232afe6841231376b2b26d4d9fae5ecf8ca5772e441"
-
-[[package]]
-name = "num-integer"
-version = "0.1.47"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ce2d95d4b3734dc35aa2f45e1aa22cd416814592a4f9d9205e11affd5b8e10b"
-dependencies = [
- "num-traits",
-]
 
 [[package]]
 name = "num-traits"
@@ -1801,9 +1791,9 @@ checksum = "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be"
 
 [[package]]
 name = "uuid"
-version = "1.29.1"
+version = "1.29.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a06f08a856b009bc7bbaf7d3e79808595d032dd19074c0c2ef26e49e03e6bdc"
+checksum = "bed99139f7dac9b5cfe5f17be4d66dc7079a34dee1d74bcc77217119240e267c"
 dependencies = [
  "getrandom 0.4.3",
  "js-sys",
