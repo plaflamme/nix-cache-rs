@@ -69,9 +69,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sigv4"
-version = "1.6.5"
+version = "1.6.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57a4393e6addc3380632887b0998d06ad5f099ab5c478be0a3eeedecf8604161"
+checksum = "6c5aa04c533733a77879294f1854c27b3715cc50ea71756d1f6a958702b1a9fb"
 dependencies = [
  "aws-credential-types",
  "aws-smithy-http",
@@ -527,9 +527,9 @@ checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
 
 [[package]]
 name = "form_urlencoded"
-version = "1.2.2"
+version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
+checksum = "afa489199eaffb1211795df1c6236ce1ad0d41a6fa45250add73e3b02420f06e"
 dependencies = [
  "percent-encoding",
 ]
@@ -674,7 +674,7 @@ dependencies = [
 [[package]]
 name = "harmonia-store-content-address"
 version = "3.3.0"
-source = "git+https://github.com/nix-community/harmonia#6e572f473b1cf50f9ebe2913de283b1cf95f3c02"
+source = "git+https://github.com/nix-community/harmonia#cd299cfe0a309a524b2c52935bb5d6f7133409f5"
 dependencies = [
  "derive_more",
  "harmonia-store-path",
@@ -686,7 +686,7 @@ dependencies = [
 [[package]]
 name = "harmonia-store-nar-info"
 version = "3.3.0"
-source = "git+https://github.com/nix-community/harmonia#6e572f473b1cf50f9ebe2913de283b1cf95f3c02"
+source = "git+https://github.com/nix-community/harmonia#cd299cfe0a309a524b2c52935bb5d6f7133409f5"
 dependencies = [
  "harmonia-store-content-address",
  "harmonia-store-path",
@@ -700,7 +700,7 @@ dependencies = [
 [[package]]
 name = "harmonia-store-path"
 version = "3.3.0"
-source = "git+https://github.com/nix-community/harmonia#6e572f473b1cf50f9ebe2913de283b1cf95f3c02"
+source = "git+https://github.com/nix-community/harmonia#cd299cfe0a309a524b2c52935bb5d6f7133409f5"
 dependencies = [
  "derive_more",
  "harmonia-utils-base-encoding",
@@ -713,7 +713,7 @@ dependencies = [
 [[package]]
 name = "harmonia-store-path-info"
 version = "3.3.0"
-source = "git+https://github.com/nix-community/harmonia#6e572f473b1cf50f9ebe2913de283b1cf95f3c02"
+source = "git+https://github.com/nix-community/harmonia#cd299cfe0a309a524b2c52935bb5d6f7133409f5"
 dependencies = [
  "harmonia-store-content-address",
  "harmonia-store-path",
@@ -725,7 +725,7 @@ dependencies = [
 [[package]]
 name = "harmonia-utils-base-encoding"
 version = "0.0.0-alpha.0"
-source = "git+https://github.com/nix-community/harmonia#6e572f473b1cf50f9ebe2913de283b1cf95f3c02"
+source = "git+https://github.com/nix-community/harmonia#cd299cfe0a309a524b2c52935bb5d6f7133409f5"
 dependencies = [
  "data-encoding",
  "derive_more",
@@ -735,7 +735,7 @@ dependencies = [
 [[package]]
 name = "harmonia-utils-hash"
 version = "0.0.0-alpha.0"
-source = "git+https://github.com/nix-community/harmonia#6e572f473b1cf50f9ebe2913de283b1cf95f3c02"
+source = "git+https://github.com/nix-community/harmonia#cd299cfe0a309a524b2c52935bb5d6f7133409f5"
 dependencies = [
  "aws-lc-rs",
  "blake3",
@@ -753,7 +753,7 @@ dependencies = [
 [[package]]
 name = "harmonia-utils-signature"
 version = "3.3.0"
-source = "git+https://github.com/nix-community/harmonia#6e572f473b1cf50f9ebe2913de283b1cf95f3c02"
+source = "git+https://github.com/nix-community/harmonia#cd299cfe0a309a524b2c52935bb5d6f7133409f5"
 dependencies = [
  "data-encoding",
  "ed25519-dalek",
@@ -1772,9 +1772,9 @@ checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 
 [[package]]
 name = "url"
-version = "2.5.8"
+version = "2.5.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff67a8a4397373c3ef660812acab3268222035010ab8680ec4215f38ba3d0eed"
+checksum = "f00cd2407bb42c0ef17be88d4cf020f5cceffd121665bac9b8b9493a369b3b1a"
 dependencies = [
  "form_urlencoded",
  "idna",
@@ -1791,9 +1791,9 @@ checksum = "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be"
 
 [[package]]
 name = "uuid"
-version = "1.29.2"
+version = "1.29.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bed99139f7dac9b5cfe5f17be4d66dc7079a34dee1d74bcc77217119240e267c"
+checksum = "3c14b15dffa2f4bd712103e857140aa04a4f2ff6e955c77d7eb8e53ee02a3b64"
 dependencies = [
  "getrandom 0.4.3",
  "js-sys",
